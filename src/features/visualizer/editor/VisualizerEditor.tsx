@@ -300,18 +300,24 @@ export function VisualizerEditor() {
     setMediaOpen(false)
   }, [commitProject])
 
-  const addSubtitleLayer = useCallback((cues: import('../subtitles/parseSrt').SrtCue[]) => {
-    const template = assetRegistry.get('subtitle-layer')
-    if (!template) return
-    const layer = template.createLayer({ settings: { cues } })
-    commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
-    setSelectedLayerId(layer.id)
+  const openSubtitleModal = useCallback((layerId?: string) => {
+    if (layerId) {
+      setEditingSubtitleLayerId(layerId)
+      setSelectedLayerId(layerId)
+    } else {
+      const template = assetRegistry.get('subtitle-layer')
+      if (!template) return
+      const layer = template.createLayer()
+      commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
+      setSelectedLayerId(layer.id)
+      setEditingSubtitleLayerId(layer.id)
+    }
+    setSubtitleOpen(true)
   }, [commitProject])
 
   const editSubtitleLayer = useCallback((layerId: string) => {
-    setEditingSubtitleLayerId(layerId)
-    setSubtitleOpen(true)
-  }, [])
+    openSubtitleModal(layerId)
+  }, [openSubtitleModal])
 
   const updateSubtitleLayerCues = useCallback((layerId: string, cues: import('../subtitles/parseSrt').SrtCue[]) => {
     commitProject((current) => ({ ...current, layers: applyLayerPatch(current.layers, layerId, { settings: { cues } }) }))
@@ -708,7 +714,7 @@ export function VisualizerEditor() {
           <button className="layers-add-btn" onClick={() => setMediaOpen(true)}>
             <Plus size={13} /> Add Layer
           </button>
-          <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => setSubtitleOpen(true)}>
+          <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => openSubtitleModal()}>
             <Captions size={13} /> Add Subtitles
           </button>
         </div>
@@ -728,25 +734,15 @@ export function VisualizerEditor() {
           />
         )}
 
-      {subtitleOpen && (() => {
-        const editingLayer = editingSubtitleLayerId
-          ? project.layers.find((l) => l.id === editingSubtitleLayerId) ?? null
-          : null
+      {subtitleOpen && editingSubtitleLayerId && (() => {
+        const editingLayer = project.layers.find((l) => l.id === editingSubtitleLayerId) ?? null
+        if (!editingLayer) return null
         return (
           <SubtitleModal
             onClose={() => { setSubtitleOpen(false); setEditingSubtitleLayerId(null) }}
-            onSave={(cues) => {
-              if (editingSubtitleLayerId) {
-                updateSubtitleLayerCues(editingSubtitleLayerId, cues)
-              } else {
-                addSubtitleLayer(cues)
-              }
-            }}
+            onSave={(cues) => updateSubtitleLayerCues(editingSubtitleLayerId, cues)}
             editingLayer={editingLayer}
-            onUpdateLayer={editingSubtitleLayerId
-              ? (patch) => updateLayer(editingSubtitleLayerId, patch)
-              : undefined
-            }
+            onUpdateLayer={(patch) => updateLayer(editingSubtitleLayerId, patch)}
             waveformPeaks={peaks}
             audioSrc={project.audio?.url ?? null}
             audioDuration={project.audio?.duration ?? 0}

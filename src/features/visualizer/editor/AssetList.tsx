@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, RotateCcw, Settings2, Trash2 } from 'lucide-react'
 import { assetRegistry } from '../assets/registry'
 import type { AssetControl, AudioTrigger, ExtraEffect, FitMode, LayerInstance } from '../project/types'
-import { msToDisplay } from '../subtitles/parseSrt'
-import type { SrtCue } from '../subtitles/parseSrt'
 
 const triggers: AudioTrigger[] = ['none', 'vocals']
 const extras: ExtraEffect[] = ['none', 'float', 'rotate', 'drift', 'shake', 'glow', 'flicker', 'particles']
@@ -132,7 +130,7 @@ export function AssetList({
                   )}
                 </div>
 
-                {/* Settings / Edit Cues */}
+                {/* Settings */}
                 {(hasControls || isSubtitle) && (
                   <div className="lr-pop">
                     <button
@@ -150,7 +148,6 @@ export function AssetList({
                       <Settings2 size={12} />
                     </button>
 
-                    {/* Non-subtitle settings popover */}
                     {!isSubtitle && isOpen('settings') && template?.controls && (
                       <div className="lr-settings-popup">
                         {template.controls.map(control => (
@@ -161,13 +158,6 @@ export function AssetList({
                             onChange={(v) => onUpdate(layer.id, { settings: { ...layer.settings, [control.key]: v } })}
                           />
                         ))}
-                      </div>
-                    )}
-
-                    {/* Subtitle quick-summary popover */}
-                    {isSubtitle && isOpen('settings') && (
-                      <div className="lr-settings-popup lr-subtitle-summary">
-                        <SubtitleSummary layer={layer} onEdit={() => { onEditSubtitleLayer?.(layer.id); setOpenPopover(null) }} />
                       </div>
                     )}
                   </div>
@@ -192,27 +182,6 @@ export function AssetList({
 function triggerLabel(t: string) {
   const m: Record<string, string> = { none: 'None', bass: 'Bass', beat: 'Beat', vocals: 'Vox', highs: 'Hi', full: 'Full' }
   return m[t] ?? t
-}
-
-// ─── Subtitle summary in popover ─────────────────────────────────────────────
-
-function SubtitleSummary({ layer, onEdit }: { layer: LayerInstance; onEdit: () => void }) {
-  const cues = (layer.settings.cues ?? []) as SrtCue[]
-  const last = cues[cues.length - 1]
-  const style = String(layer.settings.subtitleStyle ?? 'cinematic')
-  return (
-    <div className="lr-subtitle-info">
-      <p className="lr-subtitle-meta">
-        {cues.length > 0
-          ? <><strong>{cues.length}</strong> cues · {msToDisplay(last?.endMs ?? 0)} · {style}</>
-          : <span className="lr-subtitle-empty">No cues loaded</span>
-        }
-      </p>
-      <button type="button" className="lr-subtitle-edit-btn" onClick={onEdit}>
-        Open Editor →
-      </button>
-    </div>
-  )
 }
 
 // ─── Asset control input ──────────────────────────────────────────────────────

@@ -8,11 +8,10 @@ type TabId = 'import' | 'build' | 'style'
 
 type Props = {
   onClose: () => void
-  /** Called when saving cues — either creates a new layer or updates existing */
+  /** Called when saving cues to the layer */
   onSave: (cues: SrtCue[]) => void
-  /** Present when editing an existing subtitle layer */
-  editingLayer?: LayerInstance | null
-  onUpdateLayer?: (patch: Partial<LayerInstance>) => void
+  editingLayer: LayerInstance
+  onUpdateLayer: (patch: Partial<LayerInstance>) => void
   /** Waveform peaks from the main editor (160 values, 0–1) */
   waveformPeaks: number[]
   /** Src URL of the audio track, if loaded */
@@ -97,10 +96,9 @@ function DragTimeInput({
 
 // ─── Import Tab ───────────────────────────────────────────────────────────────
 
-function ImportTab({ initialCues, onSave, isEditing }: {
+function ImportTab({ initialCues, onSave }: {
   initialCues?: SrtCue[]
   onSave: (cues: SrtCue[]) => void
-  isEditing: boolean
 }) {
   const [cues, setCues] = useState<SrtCue[] | null>(initialCues ?? null)
   const [error, setError] = useState<string | null>(null)
@@ -184,7 +182,7 @@ function ImportTab({ initialCues, onSave, isEditing }: {
 
           <div className="srt-tab-actions">
             <button type="button" className="srt-add-btn" onClick={() => onSave(cues)}>
-              {isEditing ? 'Update Subtitle Layer' : 'Add Subtitle Layer'}
+              Apply Subtitles
             </button>
           </div>
         </>
@@ -493,23 +491,27 @@ const SUBTITLE_STYLES: { id: SubtitleStyle; label: string }[] = [
   { id: 'minimal',   label: 'Minimal'   },
 ]
 
-const POSITION_DOTS: { label: string; x: number; y: number }[] = [
-  { label: 'Top left',    x: -480, y: -800 },
-  { label: 'Top center',  x: 0,    y: -800 },
-  { label: 'Top right',   x: 480,  y: -800 },
-  { label: 'Mid left',    x: -480, y: 0    },
-  { label: 'Center',      x: 0,    y: 0    },
-  { label: 'Mid right',   x: 480,  y: 0    },
-  { label: 'Bot left',    x: -480, y: 700  },
-  { label: 'Bot center',  x: 0,    y: 700  },
-  { label: 'Bot right',   x: 480,  y: 700  },
+type SubtitlePosition = 'bottom' | 'middle' | 'top'
+
+const SUBTITLE_POSITIONS: { id: SubtitlePosition; label: string; offsetY: number }[] = [
+  { id: 'bottom', label: 'Bottom', offsetY: 10 },
+  { id: 'middle', label: 'Middle', offsetY: 50 },
+  { id: 'top', label: 'Top', offsetY: 85 },
 ]
+
+function offsetToPosition(offsetY: number): SubtitlePosition {
+  if (offsetY >= 65) return 'top'
+  if (offsetY >= 30) return 'middle'
+  return 'bottom'
+}
 
 function StyleTab({ layer, onUpdate }: { layer: LayerInstance; onUpdate: (patch: Partial<LayerInstance>) => void }) {
   const currentStyle = String(layer.settings.subtitleStyle ?? 'cinematic') as SubtitleStyle
   const color = String(layer.settings.color ?? '#ffffff')
   const fontSize = Number(layer.settings.fontSize ?? 48)
   const scale = layer.placement.scale
+  const offsetY = Number(layer.settings.subtitleOffsetY ?? 10)
+  const position = offsetToPosition(offsetY)
 
   return (
     <div className="srt-style-tab">
@@ -530,27 +532,25 @@ function StyleTab({ layer, onUpdate }: { layer: LayerInstance; onUpdate: (patch:
         </div>
       </section>
 
-      {/* Position */}
-      <section className="srt-style-section">
-        <p className="srt-section-label">Position</p>
-        <div className="srt-pos-grid">
-          {POSITION_DOTS.map((dot) => {
-            const active = Math.abs(layer.placement.x - dot.x) < 20 && Math.abs(layer.placement.y - dot.y) < 20
-            return (
-              <button key={dot.label} type="button"
-                className={`srt-pos-dot${active ? ' active' : ''}`}
-                title={dot.label}
-                onClick={() => onUpdate({ placement: { ...layer.placement, fit: 'custom', x: dot.x, y: dot.y } })}
-              />
-            )
-          })}
-        </div>
-      </section>
-
-      {/* Appearance sliders */}
+      {/* Appearance */}
       <section className="srt-style-section">
         <p className="srt-section-label">Appearance</p>
         <div className="srt-style-sliders">
+          <label className="srt-slider-row">
+            <span>Position</span>
+            <select
+              className="srt-select"
+              value={position}
+              onChange={(e) => {
+                const next = SUBTITLE_POSITIONS.find((p) => p.id === e.target.value)
+                if (next) onUpdate({ settings: { ...layer.settings, subtitleOffsetY: next.offsetY } })
+              }}
+            >
+              {SUBTITLE_POSITIONS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+          </label>
           <label className="srt-slider-row">
             <span>Text color</span>
             <input type="color" value={color}
@@ -565,11 +565,6 @@ function StyleTab({ layer, onUpdate }: { layer: LayerInstance; onUpdate: (patch:
             <span>Container scale <em>{Math.round(scale * 100)}%</em></span>
             <input type="range" min={0.2} max={3} step={0.05} value={scale}
               onChange={(e) => onUpdate({ placement: { ...layer.placement, fit: 'custom', scale: Number(e.target.value) } })} />
-          </label>
-          <label className="srt-slider-row">
-            <span>Opacity <em>{Math.round(layer.placement.opacity * 100)}%</em></span>
-            <input type="range" min={0} max={1} step={0.01} value={layer.placement.opacity}
-              onChange={(e) => onUpdate({ placement: { ...layer.placement, opacity: Number(e.target.value) } })} />
           </label>
         </div>
       </section>
@@ -589,10 +584,8 @@ export function SubtitleModal({
   onClose, onSave, editingLayer, onUpdateLayer,
   waveformPeaks, audioSrc, audioDuration,
 }: Props) {
-  const isEditing = Boolean(editingLayer)
-  const initialCues = (editingLayer?.settings.cues ?? []) as SrtCue[]
-  // Open on style tab if re-editing, build tab otherwise
-  const defaultTab: TabId = isEditing ? 'style' : 'import'
+  const initialCues = (editingLayer.settings.cues ?? []) as SrtCue[]
+  const defaultTab: TabId = initialCues.length > 0 ? 'build' : 'import'
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab)
   const [saving, setSaving] = useState(false)
 
@@ -605,16 +598,14 @@ export function SubtitleModal({
     }, 60)
   }
 
-  // Style tab updates go straight through to the live layer
   const handleStyleUpdate = (patch: Partial<LayerInstance>) => {
-    onUpdateLayer?.(patch)
+    onUpdateLayer(patch)
   }
 
   const handleBackdrop = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose()
   }
 
-  // Cue summary for the style tab header
   const cueCount = initialCues.length
   const lastCue = initialCues[initialCues.length - 1]
   const cueSummary = cueCount > 0
@@ -629,8 +620,6 @@ export function SubtitleModal({
           <div className="modal-tab-strip">
             {TABS.map((tab) => {
               const Icon = tab.icon
-              // Hide style tab if no editing layer
-              if (tab.id === 'style' && !isEditing) return null
               return (
                 <button key={tab.id} type="button"
                   className={`modal-tab-btn${activeTab === tab.id ? ' active' : ''}`}
@@ -643,10 +632,7 @@ export function SubtitleModal({
             })}
           </div>
 
-          {/* Cue count pill */}
-          {isEditing && (
-            <span className="srt-modal-summary">{cueSummary}</span>
-          )}
+          <span className="srt-modal-summary">{cueSummary}</span>
 
           <button type="button" className="modal-close-btn" onClick={onClose}>
             <X size={18} />
@@ -662,7 +648,7 @@ export function SubtitleModal({
           )}
 
           {activeTab === 'import' && (
-            <ImportTab initialCues={isEditing ? initialCues : undefined} onSave={handleSave} isEditing={isEditing} />
+            <ImportTab initialCues={initialCues.length > 0 ? initialCues : undefined} onSave={handleSave} />
           )}
           {activeTab === 'build' && (
             <BuildTab
@@ -670,10 +656,10 @@ export function SubtitleModal({
               audioSrc={audioSrc}
               audioDuration={audioDuration}
               onAutoSave={onSave}
-              initialCues={isEditing ? initialCues : undefined}
+              initialCues={initialCues.length > 0 ? initialCues : undefined}
             />
           )}
-          {activeTab === 'style' && editingLayer && (
+          {activeTab === 'style' && (
             <StyleTab layer={editingLayer} onUpdate={handleStyleUpdate} />
           )}
         </div>
