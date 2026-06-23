@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, Upload, X } from 'lucide-react'
 import {
   filterCommunityItems,
@@ -48,10 +48,8 @@ export function MediaModal({
     return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
   }, [query, uploadedImages, uploadedVideos])
 
-  const showUserMedia = !query.trim() || userMedia.length > 0
-
   const hasResults =
-    showUserMedia
+    userMedia.length > 0
     || filteredText.length > 0
     || filteredPuppets.length > 0
     || communitySections.length > 0
@@ -77,108 +75,101 @@ export function MediaModal({
         />
 
         <header className="layer-browser-header">
-          <div className="layer-browser-title-row">
-            <h2>Add Layer</h2>
-            <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
-              <X size={18} />
-            </button>
-          </div>
-          <div className="layer-browser-toolbar">
-            <label className="fx-search">
-              <Search size={15} />
-              <input
-                value={query}
-                placeholder="Search layers…"
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              className="layer-browser-upload-btn"
-              onClick={() => fileRef.current?.click()}
-            >
-              <Upload size={14} />
-              Upload Media
-            </button>
-          </div>
+          <h2>Add Layer</h2>
+          <label className="fx-search">
+            <Search size={15} />
+            <input
+              value={query}
+              placeholder="Search layers…"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="layer-browser-upload-btn"
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload size={14} />
+            Upload
+          </button>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
         </header>
 
         <div className="media-body layer-browser-body">
-          {showUserMedia && (
-            <section className="media-section">
-              <div className="media-section-header"><span>Your Media</span></div>
-              <div className="media-section-grid">
-                {userMedia.map((item) => (
-                  <button
-                    key={`${item.kind}-${item.id}`}
-                    type="button"
-                    className="media-card"
-                    title={item.name}
-                    onClick={() => (
-                      item.kind === 'image'
-                        ? onReuseImage(item.url, item.name, item.fileKey)
-                        : onReuseVideo(item.url, item.name, item.fileKey)
-                    )}
-                  >
-                    <div className="media-card-thumb">
-                      {item.kind === 'image' ? (
-                        <img src={item.url} alt={item.name} />
-                      ) : (
-                        <video
-                          src={item.url}
-                          muted
-                          playsInline
-                          preload="metadata"
-                          onLoadedMetadata={(e) => { e.currentTarget.currentTime = 0.1 }}
-                        />
+          {hasResults ? (
+            <div className="layer-browser-grid">
+              {userMedia.length > 0 && (
+                <>
+                  <div className="layer-grid-label">Your Media</div>
+                  {userMedia.map((item) => (
+                    <button
+                      key={`${item.kind}-${item.id}`}
+                      type="button"
+                      className="media-card"
+                      title={item.name}
+                      onClick={() => (
+                        item.kind === 'image'
+                          ? onReuseImage(item.url, item.name, item.fileKey)
+                          : onReuseVideo(item.url, item.name, item.fileKey)
                       )}
-                      {item.kind === 'video' && <span className="media-card-badge">Video</span>}
-                    </div>
-                    <div className="media-card-name">{item.name}</div>
-                  </button>
-                ))}
-                {userMedia.length === 0 && (
-                  <div className="media-empty media-empty-upload">
-                    Upload photos or videos to use as layers
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
+                    >
+                      <div className="media-card-thumb">
+                        {item.kind === 'image' ? (
+                          <img src={item.url} alt={item.name} />
+                        ) : (
+                          <video
+                            src={item.url}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            onLoadedMetadata={(e) => { e.currentTarget.currentTime = 0.1 }}
+                          />
+                        )}
+                        {item.kind === 'video' && <span className="media-card-badge">Video</span>}
+                      </div>
+                      <div className="media-card-name">{item.name}</div>
+                    </button>
+                  ))}
+                </>
+              )}
 
-          {filteredText.length > 0 && (
-            <section className="media-section">
-              <div className="media-section-header"><span>Text Styles</span></div>
-              <div className="media-section-grid">
-                {filteredText.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
-              </div>
-            </section>
-          )}
+              {filteredText.length > 0 && (
+                <>
+                  <div className="layer-grid-label">Text Styles</div>
+                  {filteredText.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
+                </>
+              )}
 
-          {filteredPuppets.length > 0 && (
-            <section className="media-section">
-              <div className="media-section-header"><span>Puppet Dancers</span></div>
-              <div className="media-section-grid">
-                {filteredPuppets.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
-              </div>
-            </section>
-          )}
+              {filteredPuppets.length > 0 && (
+                <>
+                  <div className="layer-grid-label">Puppet Dancers</div>
+                  {filteredPuppets.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
+                </>
+              )}
 
-          {communitySections.map(({ section, items }) => (
-            <section key={section.collection} className="media-section">
-              <div className="media-section-header"><span>{section.label}</span></div>
-              <div className="media-section-grid">
-                {items.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
-              </div>
-            </section>
-          ))}
-
-          {!hasResults && (
+              {communitySections.map(({ section, items }) => (
+                <SectionBlock key={section.collection} label={section.label}>
+                  {items.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
+                </SectionBlock>
+              ))}
+            </div>
+          ) : (
             <div className="media-empty-state">No layers match this search.</div>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+function SectionBlock({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <div className="layer-grid-label">{label}</div>
+      {children}
+    </>
   )
 }
 
