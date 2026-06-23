@@ -1,4 +1,4 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type CSSProperties } from 'react'
 import type { AudioFeatures } from '../audio/audioTypes'
 import { silentAudioFeatures } from '../audio/audioTypes' // silentAudioFeatures used for initial StageLayer render
 import type { LayerInstance, Project } from '../project/types'
@@ -394,16 +394,71 @@ function ParticleLayer({ color, kind, density }: ParticleLayerProps) {
       {Array.from({ length: count }).map((_, i) => (
         <b
           key={i}
-          style={{
-            left: `${(i * 37) % 100}%`,
-            top: `${(i * 53) % 100}%`,
-            animationDelay: `${(i % 17) * -0.19}s`,
-            ['--s' as string]: `${4 + (i % 6)}px`,
-          }}
+          style={particleStyle(kind, i, count)}
         />
       ))}
     </div>
   )
+}
+
+function particleStyle(kind: string, i: number, _count: number): CSSProperties {
+  const s = 4 + (i % 6)
+  const base: CSSProperties = {
+    left: `${(i * 37) % 100}%`,
+    top: `${(i * 53) % 100}%`,
+    ['--delay' as string]: `${(i % 17) * -0.19}s`,
+    ['--s' as string]: `${s}px`,
+  }
+  if (kind === 'rain') {
+    return {
+      ...base,
+      left: `${(i * 11.3) % 100}%`,
+      top: `${-((i * 7) % 40)}%`,
+      ['--dur' as string]: `${0.55 + (i % 6) * 0.12}s`,
+      ['--delay' as string]: `${-((i % 20) * 0.14)}s`,
+      ['--s' as string]: `${2 + (i % 3)}px`,
+    }
+  }
+  if (kind === 'snow') {
+    return {
+      ...base,
+      left: `${(i * 19.7) % 100}%`,
+      top: `${-((i * 5) % 30)}%`,
+      ['--dur' as string]: `${3.5 + (i % 8) * 0.65}s`,
+      ['--delay' as string]: `${-((i % 15) * 0.35)}s`,
+      ['--s' as string]: `${3 + (i % 5)}px`,
+    }
+  }
+  if (kind === 'fire') {
+    return {
+      ...base,
+      left: `${18 + ((i * 23) % 64)}%`,
+      top: `${55 + ((i * 13) % 38)}%`,
+      ['--dur' as string]: `${1.4 + (i % 5) * 0.35}s`,
+      ['--delay' as string]: `${-((i % 12) * 0.22)}s`,
+      ['--s' as string]: `${5 + (i % 7)}px`,
+    }
+  }
+  if (kind === 'stars') {
+    return {
+      ...base,
+      ['--dur' as string]: `${2.2 + (i % 9) * 0.45}s`,
+      ['--s' as string]: `${3 + (i % 4)}px`,
+    }
+  }
+  if (kind === 'smoke' || kind === 'mist') {
+    return {
+      ...base,
+      left: `${(i * 29) % 100}%`,
+      top: `${(i * 41) % 100}%`,
+      ['--dur' as string]: `${6 + (i % 7) * 1.2}s`,
+      ['--s' as string]: `${6 + (i % 5)}px`,
+    }
+  }
+  return {
+    ...base,
+    animationDelay: `${(i % 17) * -0.19}s`,
+  }
 }
 
 type AudioVisualizerLayerProps = {
