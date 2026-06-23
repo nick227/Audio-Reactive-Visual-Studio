@@ -187,17 +187,6 @@ function labelFromKey(key: string) {
 
 const backgrounds: StudioAssetDefinition[] = [
   {
-    id: 'liquid-gradient',
-    name: 'Liquid Neon',
-    thumbnail: 'LN',
-    category: 'gradients',
-    collection: 'backgrounds',
-    description: 'Fluid neon color blend — versatile stage foundation for any genre.',
-    tags: ['gradient', 'neon', 'club'],
-    extraEffect: 'drift',
-    settings: { visualKind: 'gradient', colorA: '#5b4bff', colorB: '#ff4fd8', colorC: '#00e0ff' },
-  },
-  {
     id: 'warehouse-lights',
     name: 'Club Wash',
     thumbnail: 'CW',
@@ -207,17 +196,6 @@ const backgrounds: StudioAssetDefinition[] = [
     tags: ['gradient', 'club', 'dark'],
     extraEffect: 'drift',
     settings: { visualKind: 'gradient', colorA: '#0b1021', colorB: '#6f2cff', colorC: '#00eaff' },
-  },
-  {
-    id: 'midnight-heat',
-    name: 'Midnight Heat',
-    thumbnail: 'MH',
-    category: 'gradients',
-    collection: 'backgrounds',
-    description: 'Dark and aggressive warm gradient — high contrast for rap and trap.',
-    tags: ['gradient', 'dark', 'trap'],
-    extraEffect: 'drift',
-    settings: { visualKind: 'gradient', colorA: '#111111', colorB: '#7f1d1d', colorC: '#ff6b00' },
   },
   {
     id: 'vhs-noise',
@@ -320,34 +298,6 @@ const visualizers: StudioAssetDefinition[] = [
     extraAmount: 0.2,
     settings: { visualKind: 'audioVisualizer', visualizerKind: 'ribbon', color: '#ff4fd8', bars: 40 },
   },
-  {
-    id: 'oscilloscope-line',
-    name: 'Oscilloscope',
-    thumbnail: 'OS',
-    category: 'audio-visualizers',
-    collection: 'visualizers',
-    description: 'Classic oscilloscope line — raw waveform with a technical feel.',
-    tags: ['scope', 'waveform', 'technical'],
-    trigger: 'full',
-    pulseAmount: 0.08,
-    extraEffect: 'glow',
-    extraAmount: 0.18,
-    settings: { visualKind: 'audioVisualizer', visualizerKind: 'scope', color: '#39ff14', bars: 44 },
-  },
-  {
-    id: 'kick-halo',
-    name: 'Kick Halo',
-    thumbnail: 'KH',
-    category: 'audio-visualizers',
-    collection: 'visualizers',
-    description: 'Ambient halo rings that pulse with kick drum energy.',
-    tags: ['halo', 'kick', 'ambient'],
-    trigger: 'bass',
-    pulseAmount: 0.42,
-    extraEffect: 'glow',
-    extraAmount: 0.44,
-    settings: { visualKind: 'audioVisualizer', visualizerKind: 'halo', color: '#ffffff', bars: 24 },
-  },
 ]
 
 // ─── Particles ────────────────────────────────────────────────────────────────
@@ -442,20 +392,6 @@ const particles: StudioAssetDefinition[] = [
 // ─── Objects ─────────────────────────────────────────────────────────────────
 
 const objects: StudioAssetDefinition[] = [
-  {
-    id: 'chrome-orb',
-    name: 'Chrome Orb',
-    thumbnail: 'CO',
-    category: 'three-objects',
-    collection: 'objects',
-    description: 'Polished chrome sphere — luxury centerpiece for trap, R&B, and editorial.',
-    tags: ['orb', 'chrome', 'sphere'],
-    trigger: 'bass',
-    pulseAmount: 0.28,
-    extraEffect: 'rotate',
-    extraAmount: 0.22,
-    settings: { visualKind: 'threeObject', objectKind: 'orb', color: '#d7e1ff' },
-  },
   {
     id: 'floating-gem',
     name: 'Crystal Gem',

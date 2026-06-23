@@ -578,13 +578,6 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
   gap: 8px;
   width: 100%;
 }
-.layer-grid-label {
-  grid-column: 1 / -1;
-  margin: 0; padding: 8px 2px 2px;
-  font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
-  color: rgba(255,255,255,.34);
-}
-.layer-grid-label:first-child { padding-top: 0; }
 .media-body { flex: 1; min-height: 0; overflow-y: auto; }
 .media-empty-state { padding: 32px 12px; color: rgba(255,255,255,.3); font-size: 13px; text-align: center; }
 

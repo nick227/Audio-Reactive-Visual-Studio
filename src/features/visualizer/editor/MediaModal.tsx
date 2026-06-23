@@ -1,13 +1,6 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Search, Upload, X } from 'lucide-react'
-import {
-  filterCommunityItems,
-  filterFxItems,
-  getLibrarySections,
-  puppetItems,
-  textItems,
-  type FxItem,
-} from '../fx/fxLibrary'
+import { getLayerCatalogItems, type FxItem } from '../fx/fxLibrary'
 import { PuppetThumbnail } from './PuppetThumbnail'
 
 export type UploadRecord = { id: string; name: string; url: string; fileKey: string }
@@ -32,12 +25,7 @@ export function MediaModal({
   const [query, setQuery] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const filteredText = useMemo(() => filterFxItems(textItems, query), [query])
-  const filteredPuppets = useMemo(() => filterFxItems(puppetItems, query), [query])
-  const communitySections = useMemo(
-    () => getLibrarySections(filterCommunityItems(query)),
-    [query],
-  )
+  const catalogItems = useMemo(() => getLayerCatalogItems(query), [query])
 
   const userMedia = useMemo((): UserMediaItem[] => {
     const q = query.trim().toLowerCase()
@@ -48,11 +36,7 @@ export function MediaModal({
     return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
   }, [query, uploadedImages, uploadedVideos])
 
-  const hasResults =
-    userMedia.length > 0
-    || filteredText.length > 0
-    || filteredPuppets.length > 0
-    || communitySections.length > 0
+  const hasResults = userMedia.length > 0 || catalogItems.length > 0
 
   const handleUpload = (file: File) => {
     if (file.type.startsWith('video/')) onUploadVideo(file)
@@ -100,59 +84,37 @@ export function MediaModal({
         <div className="media-body layer-browser-body">
           {hasResults ? (
             <div className="layer-browser-grid">
-              {userMedia.length > 0 && (
-                <>
-                  <div className="layer-grid-label">Your Media</div>
-                  {userMedia.map((item) => (
-                    <button
-                      key={`${item.kind}-${item.id}`}
-                      type="button"
-                      className="media-card"
-                      title={item.name}
-                      onClick={() => (
-                        item.kind === 'image'
-                          ? onReuseImage(item.url, item.name, item.fileKey)
-                          : onReuseVideo(item.url, item.name, item.fileKey)
-                      )}
-                    >
-                      <div className="media-card-thumb">
-                        {item.kind === 'image' ? (
-                          <img src={item.url} alt={item.name} />
-                        ) : (
-                          <video
-                            src={item.url}
-                            muted
-                            playsInline
-                            preload="metadata"
-                            onLoadedMetadata={(e) => { e.currentTarget.currentTime = 0.1 }}
-                          />
-                        )}
-                        {item.kind === 'video' && <span className="media-card-badge">Video</span>}
-                      </div>
-                      <div className="media-card-name">{item.name}</div>
-                    </button>
-                  ))}
-                </>
-              )}
-
-              {filteredText.length > 0 && (
-                <>
-                  <div className="layer-grid-label">Text Styles</div>
-                  {filteredText.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
-                </>
-              )}
-
-              {filteredPuppets.length > 0 && (
-                <>
-                  <div className="layer-grid-label">Puppet Dancers</div>
-                  {filteredPuppets.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
-                </>
-              )}
-
-              {communitySections.map(({ section, items }) => (
-                <SectionBlock key={section.collection} label={section.label}>
-                  {items.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
-                </SectionBlock>
+              {userMedia.map((item) => (
+                <button
+                  key={`${item.kind}-${item.id}`}
+                  type="button"
+                  className="media-card"
+                  title={item.name}
+                  onClick={() => (
+                    item.kind === 'image'
+                      ? onReuseImage(item.url, item.name, item.fileKey)
+                      : onReuseVideo(item.url, item.name, item.fileKey)
+                  )}
+                >
+                  <div className="media-card-thumb">
+                    {item.kind === 'image' ? (
+                      <img src={item.url} alt={item.name} />
+                    ) : (
+                      <video
+                        src={item.url}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={(e) => { e.currentTarget.currentTime = 0.1 }}
+                      />
+                    )}
+                    {item.kind === 'video' && <span className="media-card-badge">Video</span>}
+                  </div>
+                  <div className="media-card-name">{item.name}</div>
+                </button>
+              ))}
+              {catalogItems.map((item) => (
+                <FxCard key={item.id} item={item} onAdd={onAddTemplate} />
               ))}
             </div>
           ) : (
@@ -161,15 +123,6 @@ export function MediaModal({
         </div>
       </div>
     </div>
-  )
-}
-
-function SectionBlock({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <div className="layer-grid-label">{label}</div>
-      {children}
-    </>
   )
 }
 

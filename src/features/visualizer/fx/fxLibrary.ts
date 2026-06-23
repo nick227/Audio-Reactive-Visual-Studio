@@ -54,6 +54,22 @@ export function filterCommunityItems(query: string): FxItem[] {
   return filterFxItems(fxItems, query)
 }
 
+export function getLayerCatalogItems(query: string): FxItem[] {
+  const all = filterCommunityItems(query)
+  const text = all.filter((i) => i.category === 'typography')
+  const puppets = all.filter((i) => i.category === 'puppets')
+  const library = COMMUNITY_SECTIONS
+    .filter((s) => s.collection !== 'puppets')
+    .flatMap((section) =>
+      all.filter((item) => {
+        if (item.collection !== section.collection) return false
+        if (section.collection === 'type-frames' && item.category === 'typography') return false
+        return true
+      }),
+    )
+  return [...text, ...puppets, ...library]
+}
+
 export function getLibrarySections(items: FxItem[]): Array<{ section: CommunitySection; items: FxItem[] }> {
   return COMMUNITY_SECTIONS
     .filter((section) => section.collection !== 'puppets')
