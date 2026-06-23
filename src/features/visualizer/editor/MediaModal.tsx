@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Music, Search, Upload, X } from 'lucide-react'
+import { Search, Upload, X } from 'lucide-react'
 import {
   filterCommunityItems,
   filterFxItems,
@@ -12,34 +12,25 @@ import { PuppetThumbnail } from './PuppetThumbnail'
 
 export type UploadRecord = { id: string; name: string; url: string; fileKey: string }
 
-type AudioTrackInfo = { name: string; url: string; duration: number }
-
-type MineSection =
-  | { label: string; kind: 'images'; items: UploadRecord[]; onUpload: () => void }
-  | { label: string; kind: 'audio'; items: AudioTrackInfo[]; onUpload: () => void }
-  | { label: string; kind: 'videos'; items: UploadRecord[]; onUpload: () => void }
+type UserMediaItem = UploadRecord & { kind: 'image' | 'video' }
 
 type Props = {
   onClose: () => void
   onAddTemplate: (templateId: string) => void
   onUploadImage: (file: File) => void
-  onUploadAudio: (file: File) => void
   onUploadVideo: (file: File) => void
   uploadedImages: UploadRecord[]
   uploadedVideos: UploadRecord[]
-  audioTrack: AudioTrackInfo | null
   onReuseImage: (url: string, name: string, fileKey: string) => void
   onReuseVideo: (url: string, name: string, fileKey: string) => void
 }
 
 export function MediaModal({
-  onClose, onAddTemplate, onUploadImage, onUploadAudio, onUploadVideo,
-  uploadedImages, uploadedVideos, audioTrack, onReuseImage, onReuseVideo,
+  onClose, onAddTemplate, onUploadImage, onUploadVideo,
+  uploadedImages, uploadedVideos, onReuseImage, onReuseVideo,
 }: Props) {
   const [query, setQuery] = useState('')
-  const imageRef = useRef<HTMLInputElement>(null)
-  const audioRef = useRef<HTMLInputElement>(null)
-  const videoRef = useRef<HTMLInputElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const filteredText = useMemo(() => filterFxItems(textItems, query), [query])
   const filteredPuppets = useMemo(() => filterFxItems(puppetItems, query), [query])
@@ -48,118 +39,138 @@ export function MediaModal({
     [query],
   )
 
-  const mineSections = useMemo((): MineSection[] => {
+  const userMedia = useMemo((): UserMediaItem[] => {
     const q = query.trim().toLowerCase()
-    const filterByName = <T extends { name: string }>(arr: T[]) =>
-      q ? arr.filter((i) => i.name.toLowerCase().includes(q)) : arr
-    return [
-      { label: 'Your Images', kind: 'images', items: filterByName(uploadedImages), onUpload: () => imageRef.current?.click() },
-      { label: 'Your Audio', kind: 'audio', items: filterByName(audioTrack ? [audioTrack] : []), onUpload: () => audioRef.current?.click() },
-      { label: 'Your Videos', kind: 'videos', items: filterByName(uploadedVideos), onUpload: () => videoRef.current?.click() },
+    const items: UserMediaItem[] = [
+      ...uploadedImages.map((item) => ({ ...item, kind: 'image' as const })),
+      ...uploadedVideos.map((item) => ({ ...item, kind: 'video' as const })),
     ]
-  }, [query, uploadedImages, uploadedVideos, audioTrack])
+    return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
+  }, [query, uploadedImages, uploadedVideos])
 
-  const visibleMineSections = useMemo(
-    () => (query.trim() ? mineSections.filter((s) => s.items.length > 0) : mineSections),
-    [mineSections, query],
-  )
+  const showUserMedia = !query.trim() || userMedia.length > 0
 
   const hasResults =
-    visibleMineSections.length > 0
+    showUserMedia
     || filteredText.length > 0
     || filteredPuppets.length > 0
     || communitySections.length > 0
 
+  const handleUpload = (file: File) => {
+    if (file.type.startsWith('video/')) onUploadVideo(file)
+    else onUploadImage(file)
+  }
+
   return (
     <div className="modal-backdrop">
-      <div className="media-modal fx-browser-modal">
-        <input ref={imageRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadImage(f); e.target.value = '' }} />
-        <input ref={audioRef} type="file" accept="audio/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadAudio(f); e.target.value = '' }} />
-        <input ref={videoRef} type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadVideo(f); e.target.value = '' }} />
+      <div className="media-modal fx-browser-modal layer-browser-modal">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,video/*"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) handleUpload(file)
+            e.target.value = ''
+          }}
+        />
 
-        <div className="fx-browser-tools">
-          <label className="fx-search">
-            <Search size={15} />
-            <input
-              value={query}
-              placeholder="Search your media and FX…"
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-          <button type="button" className="modal-close-btn" onClick={onClose}><X size={18} /></button>
-        </div>
+        <header className="layer-browser-header">
+          <div className="layer-browser-title-row">
+            <h2>Add Layer</h2>
+            <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="layer-browser-toolbar">
+            <label className="fx-search">
+              <Search size={15} />
+              <input
+                value={query}
+                placeholder="Search layers…"
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="layer-browser-upload-btn"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Upload size={14} />
+              Upload Media
+            </button>
+          </div>
+        </header>
 
-        <div className="media-body">
-          {visibleMineSections.map((section) => (
-            <div key={section.label} className="media-section">
-              <div className="media-section-header">
-                <span>{section.label}</span>
-                <button type="button" className="media-upload-btn" onClick={section.onUpload}>
-                  <Upload size={12} /> Upload
-                </button>
-              </div>
+        <div className="media-body layer-browser-body">
+          {showUserMedia && (
+            <section className="media-section">
+              <div className="media-section-header"><span>Your Media</span></div>
               <div className="media-section-grid">
-                {section.kind === 'images' && section.items.map((img) => (
-                  <button key={img.id} type="button" className="media-card" title={img.name}
-                    onClick={() => onReuseImage(img.url, img.name, img.fileKey)}>
-                    <div className="media-card-thumb"><img src={img.url} alt={img.name} /></div>
-                    <div className="media-card-name">{img.name}</div>
-                  </button>
-                ))}
-                {section.kind === 'audio' && section.items.map((track) => (
-                  <div key={track.name} className="media-card active">
-                    <div className="media-card-thumb media-card-thumb-audio"><Music size={28} /></div>
-                    <div className="media-card-name">{track.name}</div>
-                    {track.duration > 0 && <div className="media-card-meta">{formatDuration(track.duration)}</div>}
-                  </div>
-                ))}
-                {section.kind === 'videos' && section.items.map((vid) => (
-                  <button key={vid.id} type="button" className="media-card" title={vid.name}
-                    onClick={() => onReuseVideo(vid.url, vid.name, vid.fileKey)}>
+                {userMedia.map((item) => (
+                  <button
+                    key={`${item.kind}-${item.id}`}
+                    type="button"
+                    className="media-card"
+                    title={item.name}
+                    onClick={() => (
+                      item.kind === 'image'
+                        ? onReuseImage(item.url, item.name, item.fileKey)
+                        : onReuseVideo(item.url, item.name, item.fileKey)
+                    )}
+                  >
                     <div className="media-card-thumb">
-                      <video
-                        src={vid.url}
-                        muted
-                        playsInline
-                        preload="metadata"
-                        onLoadedMetadata={(e) => { e.currentTarget.currentTime = 0.1 }}
-                      />
+                      {item.kind === 'image' ? (
+                        <img src={item.url} alt={item.name} />
+                      ) : (
+                        <video
+                          src={item.url}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          onLoadedMetadata={(e) => { e.currentTarget.currentTime = 0.1 }}
+                        />
+                      )}
+                      {item.kind === 'video' && <span className="media-card-badge">Video</span>}
                     </div>
-                    <div className="media-card-name">{vid.name}</div>
+                    <div className="media-card-name">{item.name}</div>
                   </button>
                 ))}
-                {section.items.length === 0 && (
-                  <div className="media-empty">No {section.label.toLowerCase()} yet</div>
+                {userMedia.length === 0 && (
+                  <div className="media-empty media-empty-upload">
+                    Upload photos or videos to use as layers
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            </section>
+          )}
 
           {filteredText.length > 0 && (
-            <div className="media-section">
+            <section className="media-section">
               <div className="media-section-header"><span>Text Styles</span></div>
               <div className="media-section-grid">
                 {filteredText.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
               </div>
-            </div>
+            </section>
           )}
 
           {filteredPuppets.length > 0 && (
-            <div className="media-section">
+            <section className="media-section">
               <div className="media-section-header"><span>Puppet Dancers</span></div>
               <div className="media-section-grid">
                 {filteredPuppets.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
               </div>
-            </div>
+            </section>
           )}
 
           {communitySections.map(({ section, items }) => (
-            <div key={section.collection} className="media-section">
+            <section key={section.collection} className="media-section">
               <div className="media-section-header"><span>{section.label}</span></div>
               <div className="media-section-grid">
                 {items.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
               </div>
-            </div>
+            </section>
           ))}
 
           {!hasResults && (
@@ -275,10 +286,4 @@ function spectrumHeight(kind: string, i: number, count: number): number {
     return Math.round(Math.max(4, 10 + 75 * Math.exp(-((x - 0.18) ** 2) / 0.05) + 35 * Math.exp(-((x - 0.58) ** 2) / 0.1) + (i % 3) * 3))
   }
   return Math.round(12 + 60 * (0.5 + 0.5 * Math.sin(x * Math.PI * 3 + 0.5)) + (i % 3) * 4)
-}
-
-function formatDuration(secs: number) {
-  const m = Math.floor(secs / 60)
-  const s = Math.floor(secs % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
 }

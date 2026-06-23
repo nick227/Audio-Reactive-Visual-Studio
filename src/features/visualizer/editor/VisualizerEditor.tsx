@@ -720,11 +720,9 @@ export function VisualizerEditor() {
             onClose={() => setMediaOpen(false)}
             onAddTemplate={addTemplate}
             onUploadImage={(file) => void addUploadedImage(file)}
-            onUploadAudio={(file) => void handleAudioFile(file)}
             onUploadVideo={(file) => void addUploadedVideo(file)}
             uploadedImages={sessionUploads}
             uploadedVideos={sessionVideos}
-            audioTrack={project.audio ? { name: project.audio.filename, url: project.audio.url, duration: project.audio.duration } : null}
             onReuseImage={reuseUpload}
             onReuseVideo={reuseVideo}
           />
