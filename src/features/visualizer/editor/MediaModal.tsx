@@ -253,7 +253,7 @@ function AssetThumbnail({ settings }: { settings: Record<string, unknown> }) {
     case 'puppet':
       return (
         <div className="thumb-asset thumb-puppet-live">
-          <PuppetThumbnail characterId={String(settings.characterId ?? 'char-club')} />
+          <PuppetThumbnail characterId={String(settings.characterId ?? 'char-dancer')} />
         </div>
       )
     default:

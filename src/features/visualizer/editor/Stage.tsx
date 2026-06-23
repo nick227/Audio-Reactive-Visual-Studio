@@ -376,11 +376,6 @@ function fallbackKind(templateId: string) {
     case 'kinetic-title': return 'typography'
     case 'vhs-noise': return 'texture'
     case 'puppet-dancer':
-    case 'puppet-street':
-    case 'puppet-evening':
-    case 'puppet-blazer':
-    case 'puppet-stage':
-    case 'puppet-robot':
       return 'puppet'
     default: return 'unknown'
   }

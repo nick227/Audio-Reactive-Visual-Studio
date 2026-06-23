@@ -15,7 +15,7 @@ import type { FitMode } from '../project/types'
 import { AutoDanceDirector } from './sequences/autoDance'
 
 function readSettings(raw: Record<string, unknown>): PuppetLayerSettings {
-  const characterId = String(raw.characterId ?? 'char-club')
+  const characterId = String(raw.characterId ?? 'char-dancer')
   const char = getCharacter(characterId)
   return {
     visualKind: 'puppet',

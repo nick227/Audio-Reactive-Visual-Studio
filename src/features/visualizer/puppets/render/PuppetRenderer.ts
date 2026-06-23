@@ -12,7 +12,7 @@ export class PuppetRenderer {
   private readonly bodyRenderer = new BodyRenderer()
   private readonly faceRenderer = new FaceRenderer()
   private outfit: OutfitDefinition = getOutfit('none')
-  private faceKit: FaceKit = getFaceKit('neon-raver')
+  private faceKit: FaceKit = getFaceKit()
 
   constructor(
     private readonly ctx: CanvasRenderingContext2D,
