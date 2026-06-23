@@ -1,6 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 import { Music, Search, Upload, X } from 'lucide-react'
-import { filterCommunityItems, fxTabs, getItemsBySection, puppetItems, textItems, type FxItem, type FxTabId } from '../fx/fxLibrary'
+import {
+  filterCommunityItems,
+  filterFxItems,
+  getLibrarySections,
+  puppetItems,
+  textItems,
+  type FxItem,
+} from '../fx/fxLibrary'
 import { PuppetThumbnail } from './PuppetThumbnail'
 
 export type UploadRecord = { id: string; name: string; url: string; fileKey: string }
@@ -29,25 +36,39 @@ export function MediaModal({
   onClose, onAddTemplate, onUploadImage, onUploadAudio, onUploadVideo,
   uploadedImages, uploadedVideos, audioTrack, onReuseImage, onReuseVideo,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<FxTabId>('mine')
   const [query, setQuery] = useState('')
   const imageRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLInputElement>(null)
 
-  const communityItems = useMemo(() => filterCommunityItems(query), [query])
-  const communitySections = useMemo(() => getItemsBySection(communityItems), [communityItems])
+  const filteredText = useMemo(() => filterFxItems(textItems, query), [query])
+  const filteredPuppets = useMemo(() => filterFxItems(puppetItems, query), [query])
+  const communitySections = useMemo(
+    () => getLibrarySections(filterCommunityItems(query)),
+    [query],
+  )
 
   const mineSections = useMemo((): MineSection[] => {
     const q = query.trim().toLowerCase()
     const filterByName = <T extends { name: string }>(arr: T[]) =>
       q ? arr.filter((i) => i.name.toLowerCase().includes(q)) : arr
     return [
-      { label: 'Images', kind: 'images', items: filterByName(uploadedImages), onUpload: () => imageRef.current?.click() },
-      { label: 'Audio', kind: 'audio', items: filterByName(audioTrack ? [audioTrack] : []), onUpload: () => audioRef.current?.click() },
-      { label: 'Videos', kind: 'videos', items: filterByName(uploadedVideos), onUpload: () => videoRef.current?.click() },
+      { label: 'Your Images', kind: 'images', items: filterByName(uploadedImages), onUpload: () => imageRef.current?.click() },
+      { label: 'Your Audio', kind: 'audio', items: filterByName(audioTrack ? [audioTrack] : []), onUpload: () => audioRef.current?.click() },
+      { label: 'Your Videos', kind: 'videos', items: filterByName(uploadedVideos), onUpload: () => videoRef.current?.click() },
     ]
   }, [query, uploadedImages, uploadedVideos, audioTrack])
+
+  const visibleMineSections = useMemo(
+    () => (query.trim() ? mineSections.filter((s) => s.items.length > 0) : mineSections),
+    [mineSections, query],
+  )
+
+  const hasResults =
+    visibleMineSections.length > 0
+    || filteredText.length > 0
+    || filteredPuppets.length > 0
+    || communitySections.length > 0
 
   return (
     <div className="modal-backdrop">
@@ -57,23 +78,11 @@ export function MediaModal({
         <input ref={videoRef} type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadVideo(f); e.target.value = '' }} />
 
         <div className="fx-browser-tools">
-          <div className="modal-tab-strip">
-            {fxTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={`modal-tab-btn${activeTab === tab.id ? ' active' : ''}`}
-                onClick={() => { setActiveTab(tab.id); setQuery('') }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
           <label className="fx-search">
             <Search size={15} />
             <input
               value={query}
-              placeholder={activeTab === 'mine' ? 'Search your media…' : 'Search FX…'}
+              placeholder="Search your media and FX…"
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
@@ -81,7 +90,7 @@ export function MediaModal({
         </div>
 
         <div className="media-body">
-          {activeTab === 'mine' && mineSections.map((section) => (
+          {visibleMineSections.map((section) => (
             <div key={section.label} className="media-section">
               <div className="media-section-header">
                 <span>{section.label}</span>
@@ -126,36 +135,35 @@ export function MediaModal({
             </div>
           ))}
 
-          {activeTab === 'text' && (
+          {filteredText.length > 0 && (
             <div className="media-section">
               <div className="media-section-header"><span>Text Styles</span></div>
               <div className="media-section-grid">
-                {textItems.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
+                {filteredText.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
               </div>
             </div>
           )}
 
-          {activeTab === 'puppets' && (
+          {filteredPuppets.length > 0 && (
             <div className="media-section">
               <div className="media-section-header"><span>Puppet Dancers</span></div>
               <div className="media-section-grid">
-                {puppetItems.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
+                {filteredPuppets.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
               </div>
             </div>
           )}
 
-          {activeTab === 'community' && communitySections.map(({ section, items }) => (
+          {communitySections.map(({ section, items }) => (
             <div key={section.collection} className="media-section">
               <div className="media-section-header"><span>{section.label}</span></div>
               <div className="media-section-grid">
                 {items.map((item) => <FxCard key={item.id} item={item} onAdd={onAddTemplate} />)}
-                {items.length === 0 && <div className="media-empty">No results</div>}
               </div>
             </div>
           ))}
 
-          {activeTab === 'community' && communitySections.length === 0 && (
-            <div className="media-empty-state">No FX match this search.</div>
+          {!hasResults && (
+            <div className="media-empty-state">No layers match this search.</div>
           )}
         </div>
       </div>

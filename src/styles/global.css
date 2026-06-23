@@ -533,7 +533,8 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 
 /* Cinematic FX Browser */
 .fx-browser-modal { width: 50vw; max-width: 100%; height: 80vh; display: flex; flex-direction: column; margin: auto; }
-.fx-browser-tools { display: flex; gap: 12px; align-items: center; padding: 0 18px 14px; }
+.fx-browser-tools { display: flex; gap: 12px; align-items: center; padding: 14px 18px; flex-shrink: 0; }
+.fx-browser-tools .fx-search { flex: 1; }
 .fx-search { flex: 1; min-width: 240px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 12px 14px; background: rgba(255,255,255,.065); color: #bdbbd0; }
 .fx-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #fff; }
 .fx-search input::placeholder { color: #7b788f; }

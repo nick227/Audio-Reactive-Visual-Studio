@@ -1,8 +1,6 @@
 import { communityAssets } from '../assets/registry'
 import type { AssetCategory, AssetCollection, AssetTemplate } from '../project/types'
 
-export type FxTabId = 'mine' | 'text' | 'puppets' | 'community'
-
 export type FxItem = {
   id: string
   title: string
@@ -12,18 +10,6 @@ export type FxItem = {
   settings: Record<string, unknown>
   add: { mode: 'layer'; templateId: string }
 }
-
-export type FxTab = {
-  id: FxTabId
-  label: string
-}
-
-export const fxTabs: FxTab[] = [
-  { id: 'mine', label: 'Mine' },
-  { id: 'text', label: 'Text' },
-  { id: 'puppets', label: 'Puppets' },
-  { id: 'community', label: 'Community' },
-]
 
 export type CommunitySection = {
   collection: AssetCollection
@@ -52,16 +38,34 @@ export const puppetItems: FxItem[] = communityAssets
   .filter((asset) => asset.category === 'puppets')
   .map(assetToFxItem)
 
-export function filterCommunityItems(query: string): FxItem[] {
-  if (!query.trim()) return fxItems
+export function filterFxItems(items: FxItem[], query: string): FxItem[] {
+  if (!query.trim()) return items
   const q = query.trim().toLowerCase()
-  return fxItems.filter((item) =>
+  return items.filter((item) =>
     [item.title, item.category, item.collection, ...item.tags]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
-      .includes(q)
+      .includes(q),
   )
+}
+
+export function filterCommunityItems(query: string): FxItem[] {
+  return filterFxItems(fxItems, query)
+}
+
+export function getLibrarySections(items: FxItem[]): Array<{ section: CommunitySection; items: FxItem[] }> {
+  return COMMUNITY_SECTIONS
+    .filter((section) => section.collection !== 'puppets')
+    .map((section) => ({
+      section,
+      items: items.filter((item) => {
+        if (item.collection !== section.collection) return false
+        if (section.collection === 'type-frames' && item.category === 'typography') return false
+        return true
+      }),
+    }))
+    .filter((group) => group.items.length > 0)
 }
 
 export function getItemsBySection(items: FxItem[]): Array<{ section: CommunitySection; items: FxItem[] }> {
