@@ -1,0 +1,1144 @@
+openapi: 3.1.0
+info:
+  title: Audio Visual Layer API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3001
+    description: Local dev
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: sessionToken
+    adminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: sessionToken
+      description: Same token as bearerAuth but additionally requires ADMIN role
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+
+    User:
+      type: object
+      required: [id, email, displayName, role, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [USER, ADMIN]
+        suspendedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AuthResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+
+    GoogleAuthInput:
+      type: object
+      required: [credential]
+      properties:
+        credential:
+          type: string
+          description: Google ID token from the Sign-In button callback
+
+    ProjectSummary:
+      type: object
+      required: [id, userId, title, schemaVersion, visibility, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+        schemaVersion:
+          type: integer
+        visibility:
+          type: string
+          enum: [PRIVATE, PUBLIC]
+        thumbnailUrl:
+          type: string
+          nullable: true
+        shareToken:
+          type: string
+          nullable: true
+          description: Present if the project has been published
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Project:
+      allOf:
+        - $ref: '#/components/schemas/ProjectSummary'
+        - type: object
+          required: [documentJson]
+          properties:
+            documentJson:
+              description: The full serialized Project document
+              type: object
+              additionalProperties: true
+
+    CreateProjectInput:
+      type: object
+      required: [title, documentJson]
+      properties:
+        title:
+          type: string
+        documentJson:
+          type: object
+          additionalProperties: true
+        schemaVersion:
+          type: integer
+          default: 1
+        thumbnailUrl:
+          type: string
+
+    UpdateProjectInput:
+      type: object
+      properties:
+        title:
+          type: string
+        documentJson:
+          type: object
+          additionalProperties: true
+        thumbnailUrl:
+          type: string
+
+    ProjectListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectSummary'
+
+    ProjectResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Project'
+
+    ShareResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [shareToken]
+          properties:
+            shareToken:
+              type: string
+
+    # Password reset
+    PasswordResetRequestInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    PasswordResetConfirmInput:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+
+    # Profile
+    UpdateProfileInput:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+        avatarUrl:
+          type: string
+          nullable: true
+
+    ProfileResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+
+    # Admin — users
+    AdminUserListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+
+    AdminUserResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+
+    UpdateAdminUserInput:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [USER, ADMIN]
+        suspended:
+          type: boolean
+          description: true to suspend, false to unsuspend
+
+    # Admin — community assets
+    CommunityAssetItem:
+      type: object
+      required: [id, fileKey, filename, mimeType, sizeBytes, published, uploadedBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        fileKey:
+          type: string
+        filename:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        title:
+          type: string
+          nullable: true
+        published:
+          type: boolean
+        uploadedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CommunityAssetListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommunityAssetItem'
+
+    CommunityAssetResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/CommunityAssetItem'
+
+    CommunityUploadUrlInput:
+      type: object
+      required: [filename, mimeType, sizeBytes]
+      properties:
+        filename:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        title:
+          type: string
+
+    UpdateCommunityAssetInput:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
+        published:
+          type: boolean
+
+    # Phase 2 — media upload
+    UploadUrlInput:
+      type: object
+      required: [projectId, filename, mimeType, sizeBytes]
+      properties:
+        projectId:
+          type: string
+        filename:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+
+    UploadUrlResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [fileKey, uploadUrl]
+          properties:
+            fileKey:
+              type: string
+            uploadUrl:
+              type: string
+
+    CompleteUploadInput:
+      type: object
+      required: [fileKey]
+      properties:
+        fileKey:
+          type: string
+
+    AssetResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, fileKey, filename, mimeType, sizeBytes]
+          properties:
+            id:
+              type: string
+            fileKey:
+              type: string
+            filename:
+              type: string
+            mimeType:
+              type: string
+            sizeBytes:
+              type: integer
+
+paths:
+  # ── Auth ─────────────────────────────────────────────────────────────────
+
+  /auth/google:
+    post:
+      operationId: googleAuth
+      security: []
+      tags: [auth]
+      summary: Sign in or register with Google ID token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleAuthInput'
+      responses:
+        '200':
+          description: Authenticated — session cookie set
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid credential
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      tags: [auth]
+      summary: Get the currently authenticated user
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      operationId: logout
+      security:
+        - bearerAuth: []
+      tags: [auth]
+      summary: End the current session
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    nullable: true
+                    type: string
+
+  # ── Projects ─────────────────────────────────────────────────────────────
+
+  /projects:
+    get:
+      operationId: listProjects
+      security:
+        - bearerAuth: []
+      tags: [projects]
+      summary: List the authenticated user's projects
+      responses:
+        '200':
+          description: Project list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      operationId: createProject
+      security:
+        - bearerAuth: []
+      tags: [projects]
+      summary: Save a new project to the cloud
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectInput'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      security:
+        - bearerAuth: []
+      tags: [projects]
+      summary: Get a project by ID (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      operationId: updateProject
+      security:
+        - bearerAuth: []
+      tags: [projects]
+      summary: Update project title, document, or thumbnail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectInput'
+      responses:
+        '200':
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: deleteProject
+      security:
+        - bearerAuth: []
+      tags: [projects]
+      summary: Delete a project and all its assets
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /projects/{id}/share:
+    post:
+      operationId: shareProject
+      security:
+        - bearerAuth: []
+      tags: [projects]
+      summary: Publish project — creates or returns the share token
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Share token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: unshareProject
+      security:
+        - bearerAuth: []
+      tags: [projects]
+      summary: Unpublish project — revokes the share token
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Share revoked
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Public share viewer ───────────────────────────────────────────────────
+
+  /p/{shareToken}:
+    get:
+      operationId: getSharedProject
+      security: []
+      tags: [public]
+      summary: Load a publicly shared project (read-only)
+      parameters:
+        - name: shareToken
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Shared project with temporary signed media URLs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '404':
+          description: Share link not found or project unpublished
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Password reset ───────────────────────────────────────────────────────
+
+  /auth/password-reset/request:
+    post:
+      operationId: requestPasswordReset
+      security: []
+      tags: [auth]
+      summary: Request a password reset email (logs URL to console in dev)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestInput'
+      responses:
+        '200':
+          description: Reset email sent (always 200 — does not reveal whether email exists)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    nullable: true
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/password-reset/confirm:
+    post:
+      operationId: confirmPasswordReset
+      security: []
+      tags: [auth]
+      summary: Consume a reset token and set a new password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmInput'
+      responses:
+        '200':
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    nullable: true
+                    type: string
+        '400':
+          description: Invalid, expired, or already-used token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Profile ──────────────────────────────────────────────────────────────
+
+  /profile:
+    get:
+      operationId: getProfile
+      security:
+        - bearerAuth: []
+      tags: [profile]
+      summary: Get the authenticated user's profile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      operationId: updateProfile
+      security:
+        - bearerAuth: []
+      tags: [profile]
+      summary: Update displayName or avatarUrl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileInput'
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Admin — user management ──────────────────────────────────────────────
+
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: List all users (admin only)
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden — admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/users/{id}:
+    patch:
+      operationId: updateAdminUser
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: Change a user's role or suspend/unsuspend them
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminUserInput'
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '400':
+          description: Cannot modify last admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: deleteAdminUser
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: Delete a user (guarded — cannot delete last admin or self)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          description: Cannot delete self or last admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Admin — community assets ─────────────────────────────────────────────
+
+  /admin/community-assets:
+    get:
+      operationId: listCommunityAssets
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: List all community assets (admin only)
+      responses:
+        '200':
+          description: Community asset list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityAssetListResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/community-assets/upload-url:
+    post:
+      operationId: requestCommunityUploadUrl
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: Request a presigned R2 URL for a community asset upload (Phase 2 stub)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunityUploadUrlInput'
+      responses:
+        '200':
+          description: Presigned upload URL + fileKey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadUrlResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: Not yet implemented (Phase 2)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/community-assets/complete:
+    post:
+      operationId: completeCommunityUpload
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: Confirm R2 upload and create a community asset record (Phase 2 stub)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUploadInput'
+      responses:
+        '201':
+          description: Community asset created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityAssetResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: Not yet implemented (Phase 2)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/community-assets/{id}:
+    patch:
+      operationId: updateCommunityAsset
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: Update title or publish/unpublish a community asset
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommunityAssetInput'
+      responses:
+        '200':
+          description: Updated asset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityAssetResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: deleteCommunityAsset
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: Delete a community asset record (does not delete the R2 object yet)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Assets (Phase 2 — stubs return 501 until R2 is wired) ────────────────
+
+  /assets/upload-url:
+    post:
+      operationId: requestUploadUrl
+      security:
+        - bearerAuth: []
+      tags: [assets]
+      summary: Request a presigned R2 upload URL for a media file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlInput'
+      responses:
+        '200':
+          description: Presigned upload URL + fileKey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadUrlResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: Not yet implemented (Phase 2)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /assets/complete:
+    post:
+      operationId: completeUpload
+      security:
+        - bearerAuth: []
+      tags: [assets]
+      summary: Confirm R2 upload complete and record the asset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUploadInput'
+      responses:
+        '201':
+          description: Asset record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: Not yet implemented (Phase 2)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

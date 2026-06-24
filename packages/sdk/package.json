@@ -1,0 +1,22 @@
+{
+  "name": "@avl/sdk",
+  "version": "0.0.1",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "tsx scripts/generate.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.80.7",
+    "openapi-fetch": "^0.13.5"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.8.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

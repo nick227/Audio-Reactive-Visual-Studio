@@ -1,0 +1,31 @@
+/* ── Shared modal chrome ── */
+.modal-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); }
+.modal-backdrop--locked { background: rgba(0,0,0,.45); backdrop-filter: blur(var(--blur-sm)); pointer-events: all; }
+.modal-close-btn {
+  width: 32px; height: 32px; border-radius: var(--radius-full);
+  display: grid; place-items: center;
+  background: var(--white-8); color: rgba(255,255,255,.6);
+  flex-shrink: 0;
+}
+.modal-close-btn:hover { background: var(--white-14); color: #fff; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 18px; border-bottom: 1px solid var(--border-dim); }
+.modal-header h2 { margin: 0; }
+
+/* ── Modal tab strip ── */
+.modal-tab-strip { display: flex; gap: 4px; }
+.modal-tab-btn { height: 32px; padding: 0 14px; border-radius: var(--radius-md); font-size: 13px; font-weight: 700; color: rgba(255,255,255,.45); background: transparent; transition: background var(--t-base), color var(--t-base); }
+.modal-tab-btn:hover { color: rgba(255,255,255,.75); background: var(--white-6); }
+.modal-tab-btn.active { color: var(--accent); background: var(--white-10); }
+
+/* ── Upload / asset generic ── */
+.upload-drop { margin: 16px; padding: 18px; border: 1px dashed rgba(255,255,255,.22); border-radius: 20px; display: flex; align-items: center; gap: 14px; justify-content: space-between; flex-wrap: wrap; background: var(--white-4); }
+.upload-drop span { color: #a9a8bd; }
+.category-strip { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 12px; }
+.category-strip span { white-space: nowrap; padding: 7px 10px; border-radius: var(--radius-full); background: var(--white-7); color: #c2c0d4; font-size: 12px; }
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; padding: 0 16px 18px; }
+.asset-card { text-align: left; border: 1px solid var(--border-muted); border-radius: var(--radius-2xl); background: rgba(255,255,255,.045); color: white; padding: 12px; }
+.asset-card:hover { border-color: rgba(242,240,255,.65); }
+.asset-card-preview { height: 112px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 10px; background: radial-gradient(circle at top left, #5b4bff, transparent 42%), radial-gradient(circle at bottom right, var(--pink), transparent 40%), #1d1d29; font-size: 24px; font-weight: 900; }
+.asset-card strong { display: block; }
+.asset-card span { display: block; color: #a9a8bd; font-size: 12px; margin-top: 3px; }
+.asset-card p { color: #ceccdc; font-size: 13px; margin: 8px 0 0; }

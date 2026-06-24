@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  googleId            String?              @unique         // null for email/password accounts
+  email               String               @unique
+  displayName         String
+  avatarUrl           String?
+  passwordHash        String?              // null for Google-only accounts
+  role                UserRole             @default(USER)
+  suspendedAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  sessions            Session[]
+  projects            Project[]
+  passwordResetTokens PasswordResetToken[]
+  communityAssets     CommunityAsset[]
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+// Projects are stored as versioned JSON documents, not normalized SQL tables.
+// documentJson holds the full Project type from apps/web/src/features/visualizer/project/types.ts.
+// schemaVersion is incremented when the Project shape changes in a breaking way.
+model Project {
+  id            String         @id @default(cuid())
+  userId        String
+  title         String
+  documentJson  Json
+  schemaVersion Int            @default(1)
+  visibility    Visibility     @default(PRIVATE)
+  thumbnailUrl  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets        ProjectAsset[]
+  share         ProjectShare?
+
+  @@index([userId, updatedAt(sort: Desc)])
+}
+
+// Phase 2: media files uploaded to R2. fileKey is the R2 object key.
+// Not yet wired in Phase 1 — records will be created in Phase 2.
+model ProjectAsset {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  fileKey   String   @unique
+  filename  String
+  mimeType  String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// A project gets at most one share record. shareToken is the public URL slug.
+model ProjectShare {
+  id         String   @id @default(cuid())
+  projectId  String   @unique
+  shareToken String   @unique @default(cuid())
+  createdAt  DateTime @default(now())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// Password reset tokens — raw token is sent via email/console; only the hash is stored.
+// Single-use: usedAt is set on consumption. Expires after 1 hour.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Admin-uploaded shared media. Separate from per-project ProjectAsset.
+// R2 upload flow: Phase 2. Records can be managed (publish/unpublish) independently.
+model CommunityAsset {
+  id         String   @id @default(cuid())
+  uploadedBy String
+  fileKey    String   @unique
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  title      String?
+  published  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  uploader   User     @relation(fields: [uploadedBy], references: [id])
+}
+
+enum Visibility {
+  PRIVATE
+  PUBLIC
+}

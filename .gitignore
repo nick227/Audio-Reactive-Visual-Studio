@@ -43,3 +43,10 @@ coverage/
 
 # Optional: npm lockfile (project uses pnpm)
 package-lock.json
+
+# Root-level src/ and configs are now in apps/web/ — kept here during migration
+# src/
+# vite.config.ts
+# tsconfig.json
+# eslint.config.js
+# index.html

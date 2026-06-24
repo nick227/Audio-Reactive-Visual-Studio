@@ -620,7 +620,6 @@ export function VisualizerEditor() {
 
     // Init engine before building the stream so we can tap the audio output.
     audio.currentTime = 0
-    audio.muted = true
     engineRef.current ??= new AudioEngine()
     engineRef.current.connect(audio)
     await engineRef.current.resume()
@@ -679,7 +678,6 @@ export function VisualizerEditor() {
         setTimeout(() => URL.revokeObjectURL(url), 30_000)
       }
     } finally {
-      audio.muted = false
       engineRef.current?.setOutputMuted(false)
       exportActiveRef.current = false
       setExportSnapshot(null)

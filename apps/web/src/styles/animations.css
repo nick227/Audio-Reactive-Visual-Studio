@@ -1,0 +1,79 @@
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes dl-spin { to { transform: rotate(360deg); } }
+@keyframes srt-spin { to { transform: rotate(360deg); } }
+
+@keyframes subtitle-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes vis-always-flash {
+  0%   { box-shadow: 0 0 0 2px rgba(210,196,255,.95), 0 0 14px rgba(120,88,255,.55); }
+  100% { box-shadow: none; }
+}
+
+@keyframes studio-drift {
+  from { background-position: 0 0, 0 0, 0 0, 0 0; }
+  to   { background-position: 6% -4%, -5% 3%, 3% 8%, 0 0; }
+}
+
+@keyframes studio-card-drift {
+  from { transform: translate3d(-3%, -2%, 0) scale(1); }
+  to   { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+
+@keyframes fx-thumb-drift {
+  from { transform: translate3d(-3%, -2%, 0) scale(1); }
+  to   { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+
+@keyframes particle-float {
+  from { transform: translate3d(-7px, 8px, 0) scale(.7); opacity: .38; }
+  to   { transform: translate3d(9px, -18px, 0) scale(1.18); opacity: .95; }
+}
+@keyframes particle-rain {
+  from { transform: translateY(-12vh); opacity: 0; }
+  8%   { opacity: .75; }
+  to   { transform: translateY(110vh); opacity: 0; }
+}
+@keyframes particle-snow {
+  from { transform: translateY(-8vh) translateX(0); opacity: 0; }
+  10%  { opacity: .85; }
+  to   { transform: translateY(105vh) translateX(14px); opacity: 0; }
+}
+@keyframes particle-fire {
+  from { transform: translateY(12vh) scale(1); opacity: .95; }
+  to   { transform: translateY(-32vh) scale(.25); opacity: 0; }
+}
+@keyframes particle-twinkle {
+  from { opacity: .25; transform: scale(.6); }
+  to   { opacity: 1; transform: scale(1.15); }
+}
+@keyframes particle-smoke {
+  from { transform: translateY(8px) scale(.85); opacity: .12; }
+  to   { transform: translateY(-28px) scale(1.35); opacity: .32; }
+}
+
+@keyframes sweep {
+  from { transform: translateX(-70%); }
+  to   { transform: translateX(70%); }
+}
+@keyframes analog-roll {
+  from { transform: translateY(-80%); }
+  to   { transform: translateY(80%); }
+}
+@keyframes lightning-flash {
+  0%, 88%, 100% { opacity: 0; }
+  89%  { opacity: .95; }
+  90%  { opacity: .15; }
+  91%  { opacity: .88; }
+  92%  { opacity: 0; }
+}
+@keyframes portal-spin {
+  from { transform: rotate(0deg) scale(1); }
+  to   { transform: rotate(360deg) scale(1.04); }
+}
+@keyframes dream-drift {
+  from { transform: translate(-3%, 2%) scale(1); opacity: .55; }
+  to   { transform: translate(4%, -3%) scale(1.08); opacity: .78; }
+}
