@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import type { LayerInstance, StageEntity } from '../project/types'
 import type { EffectTransform } from './effects'
+import { isTypographyLayer } from './layerVisualKind'
 
 type StageSize = Pick<StageEntity, 'width' | 'height'>
 
@@ -46,6 +47,10 @@ function objectFit(layer: LayerInstance) {
 }
 
 function fitSize(layer: LayerInstance): Pick<CSSProperties, 'width' | 'height'> {
+  if (isTypographyLayer(layer)) {
+    return { width: 'fit-content', height: 'fit-content' }
+  }
+
   switch (layer.placement.fit) {
     case 'cover':
     case 'stretch':

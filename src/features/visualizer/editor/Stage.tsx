@@ -10,6 +10,7 @@ import { MicroEventEngine } from '../runtime/microEventEngine'
 import { LayerErrorBoundary } from './LayerErrorBoundary'
 import { PuppetCanvasLayer } from './PuppetCanvasLayer'
 import { SubtitleLayer } from './SubtitleLayer'
+import { isTypographyLayer, resolveVisualKind } from '../runtime/layerVisualKind'
 import { puppetRuntimeHost } from '../runtime/puppetRuntimeHost'
 
 export type StageHandle = {
@@ -62,7 +63,7 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
 
           // Per-bar audio update for audioVisualizer layers
           if (features.bins) {
-            const visualKind = String(layer.settings.visualKind ?? fallbackKind(layer.templateId))
+            const visualKind = resolveVisualKind(layer)
             if (visualKind === 'audioVisualizer') {
               const barsDiv = el.firstElementChild
               if (barsDiv) {
@@ -142,12 +143,13 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
   const content = useMemo(
     () => isEditing ? null : renderLayerContent(layer, currentTimeMs),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layer.id, layer.templateId, layer.settings, layer.name, layer.placement.fit, isEditing, currentTimeMs],
+    [layer.id, layer.templateId, layer.settings, layer.settings.color, layer.name, layer.placement.fit, isEditing, currentTimeMs],
   )
 
   if (!template) return null
 
-  const isSubtitle = String(layer.settings.visualKind) === 'subtitle'
+  const isSubtitle = resolveVisualKind(layer) === 'subtitle'
+  const isTypography = isTypographyLayer(layer)
   const counterScale = 1 / Math.max(0.01, layer.placement.scale)
 
   const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>, cursor: string) => {
@@ -222,17 +224,16 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
     if (layer.locked) return
     event.stopPropagation()
     onSelectLayer(layer.id)
-    onDragStart?.()
 
     const el = event.currentTarget
     const stageEl = el.closest<HTMLElement>('.stage')
     const stageBounds = stageEl?.getBoundingClientRect()
     if (!stageBounds) return
 
-    document.body.style.userSelect = 'none'
-    el.setPointerCapture(event.pointerId)
+    const startClientX = event.clientX
+    const startClientY = event.clientY
+    let dragging = false
 
-    // Shared cleanup — `move` is assigned below before listeners are added.
     let move = (_e: PointerEvent) => {}
     const cleanup = () => {
       document.body.style.userSelect = ''
@@ -242,25 +243,34 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
     }
 
     if (isSubtitle) {
-      // Subtitle: drag up/down to reposition via subtitleOffsetY (% from bottom).
       const startOffsetY = Number(layer.settings.subtitleOffsetY ?? 10)
-      const startClientY = event.clientY
       const stageDisplayH = stageBounds.height
       move = (me: PointerEvent) => {
+        if (!dragging) {
+          if (Math.hypot(me.clientX - startClientX, me.clientY - startClientY) < 4) return
+          dragging = true
+          onDragStart?.()
+          document.body.style.userSelect = 'none'
+          el.setPointerCapture(me.pointerId)
+        }
         const deltaYPct = ((me.clientY - startClientY) / stageDisplayH) * 100
         onUpdateLayer(layer.id, {
           settings: { subtitleOffsetY: Math.max(2, Math.min(95, startOffsetY - deltaYPct)) },
         })
       }
     } else {
-      // Normal layer: drag to reposition in stage coordinates.
       const scaleX = stageBounds.width ? stageWidth / stageBounds.width : 1
       const scaleY = stageBounds.height ? stageHeight / stageBounds.height : 1
-      const startClientX = event.clientX
-      const startClientY = event.clientY
       const originX = layer.placement.x
       const originY = layer.placement.y
       move = (me: PointerEvent) => {
+        if (!dragging) {
+          if (Math.hypot(me.clientX - startClientX, me.clientY - startClientY) < 4) return
+          dragging = true
+          onDragStart?.()
+          document.body.style.userSelect = 'none'
+          el.setPointerCapture(me.pointerId)
+        }
         onUpdateLayer(layer.id, {
           placement: {
             ...layer.placement,
@@ -280,8 +290,8 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
   return (
     <div
       ref={(node) => { hostRef.current = node; setRef(layer.id, node) }}
-      className={`stage-layer ${selected ? 'selected' : ''}${isSubtitle ? ' subtitle-host' : ''}`}
-      style={style}
+      className={`stage-layer ${selected ? 'selected' : ''}${isSubtitle ? ' subtitle-host' : ''}${isTypography ? ' typography-host' : ''}`}
+      style={isSubtitle ? { ...style, pointerEvents: 'none' } : style}
       onPointerDown={onPointerDown}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(layer.id) }}
     >
@@ -301,12 +311,12 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
             <>
               <div
                 className="resize-handle resize-handle-sub-l"
-                style={{ bottom: `${Number(layer.settings.subtitleOffsetY ?? 10)}%` }}
+                style={{ bottom: `${Number(layer.settings.subtitleOffsetY ?? 0)}%` }}
                 onPointerDown={(e) => handleResizeStart(e, 'ew-resize')}
               />
               <div
                 className="resize-handle resize-handle-sub-r"
-                style={{ bottom: `${Number(layer.settings.subtitleOffsetY ?? 10)}%` }}
+                style={{ bottom: `${Number(layer.settings.subtitleOffsetY ?? 0)}%` }}
                 onPointerDown={(e) => handleResizeStart(e, 'ew-resize')}
               />
             </>
@@ -318,7 +328,7 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
 })
 
 function renderLayerContent(layer: LayerInstance, currentTimeMs: number = 0) {
-  const visualKind = String(layer.settings.visualKind ?? fallbackKind(layer.templateId))
+  const visualKind = resolveVisualKind(layer)
   const color = String(layer.settings.color ?? '#ffffff')
 
   if (layer.templateId === 'photo-cutout') {
@@ -364,20 +374,6 @@ function renderLayerContent(layer: LayerInstance, currentTimeMs: number = 0) {
       return <SubtitleLayer layer={layer} currentTimeMs={currentTimeMs} />
     default:
       return <div className="image-placeholder">{layer.name}</div>
-  }
-}
-
-function fallbackKind(templateId: string) {
-  switch (templateId) {
-    case 'liquid-gradient': return 'gradient'
-    case 'bass-rings': return 'audioVisualizer'
-    case 'spark-particles': return 'particles'
-    case 'chrome-frame': return 'frame'
-    case 'kinetic-title': return 'typography'
-    case 'vhs-noise': return 'texture'
-    case 'puppet-dancer':
-      return 'puppet'
-    default: return 'unknown'
   }
 }
 
@@ -486,8 +482,9 @@ function AudioVisualizerLayer({ color, kind, bars }: AudioVisualizerLayerProps) 
 
 function TypographyLayer({ layer }: { layer: LayerInstance }) {
   const typeKind = String(layer.settings.typeKind ?? 'block')
+  const color = String(layer.settings.color ?? '#ffffff')
   return (
-    <div className={`studio-type type-${typeKind}`} style={{ color: String(layer.settings.color ?? '#ffffff') }}>
+    <div className={`studio-type type-${typeKind}`} style={{ color }}>
       {String(layer.settings.text ?? 'AUDIO VISUAL')}
     </div>
   )

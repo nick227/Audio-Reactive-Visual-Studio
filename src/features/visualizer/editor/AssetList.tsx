@@ -219,7 +219,7 @@ function LayerSettingsPopup({
           key={control.key}
           control={control}
           value={layer.settings[control.key]}
-          onChange={(v) => onUpdate({ settings: { ...layer.settings, [control.key]: v } })}
+          onChange={(v) => onUpdate({ settings: { [control.key]: v } })}
         />
       ))}
 
@@ -245,14 +245,30 @@ function triggerLabel(t: string) {
   return m[t] ?? t
 }
 
+function normalizeColorValue(value: unknown): string {
+  if (typeof value !== 'string' || !value.startsWith('#')) return '#ffffff'
+  if (value.length === 4) {
+    const [, r, g, b] = value
+    return `#${r}${r}${g}${g}${b}${b}`
+  }
+  if (value.length === 7) return value
+  return '#ffffff'
+}
+
 type AssetControlInputProps = { control: AssetControl; value: unknown; onChange: (v: string | number) => void }
 
 function AssetControlInput({ control, value, onChange }: AssetControlInputProps) {
   if (control.type === 'color') {
+    const hex = normalizeColorValue(value)
     return (
       <label className="lr-settings-field">
         <span>{control.label}</span>
-        <input type="color" value={typeof value === 'string' ? value : '#ffffff'} onChange={(e) => onChange(e.target.value)} />
+        <input
+          type="color"
+          value={hex}
+          onInput={(e) => onChange(e.currentTarget.value)}
+          onChange={(e) => onChange(e.currentTarget.value)}
+        />
       </label>
     )
   }

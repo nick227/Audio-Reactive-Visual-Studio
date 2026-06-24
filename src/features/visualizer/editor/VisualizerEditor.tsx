@@ -10,6 +10,7 @@ import { clearSavedProject, saveProject } from '../project/projectPersistence'
 import type { LayerInstance, Project, StagePresetId } from '../project/types'
 import { assetRegistry } from '../assets/registry'
 import { createEntityId, nowIso } from '../entities/entityTypes'
+import { isTypographyLayer } from '../runtime/layerVisualKind'
 import { Stage, type StageHandle } from './Stage'
 import { Waveform } from './Waveform'
 import { AssetList } from './AssetList'
@@ -93,6 +94,19 @@ export function VisualizerEditor() {
     }
   }, [project.layers, selectedLayerId])
 
+  // Clicking outside the stage canvas deselects all layers.
+  // Layer pointerdowns call stopPropagation so they never reach this handler.
+  useEffect(() => {
+    const handler = (e: PointerEvent) => {
+      const stageEl = stageRef.current?.getStageElement()
+      if (stageEl && !stageEl.contains(e.target as Node)) {
+        setSelectedLayerId('')
+      }
+    }
+    document.addEventListener('pointerdown', handler)
+    return () => document.removeEventListener('pointerdown', handler)
+  }, [])
+
   // ── History operations ──────────────────────────────────────────────────────
 
   // Updates present without touching past/future — used for live drag updates.
@@ -146,7 +160,7 @@ export function VisualizerEditor() {
 
   const handleLayerDoubleClick = useCallback((layerId: string) => {
     const layer = project.layers.find((l) => l.id === layerId)
-    if (layer && String(layer.settings.visualKind) === 'typography') setTextEditLayerId(layerId)
+    if (layer && isTypographyLayer(layer)) setTextEditLayerId(layerId)
   }, [project.layers])
 
   const handleTextChange = useCallback((layerId: string, text: string) => {
@@ -617,7 +631,10 @@ export function VisualizerEditor() {
               ref={stageRef}
               project={project}
               selectedLayerId={selectedLayerId}
-              onSelectLayer={(id) => { setSelectedLayerId(id); setTextEditLayerId(null) }}
+              onSelectLayer={(id) => {
+                setSelectedLayerId(id)
+                if (id !== textEditLayerIdRef.current) setTextEditLayerId(null)
+              }}
               onUpdateLayer={updateLayerTransient}
               onDragStart={snapshotForDrag}
               onDoubleClickLayer={handleLayerDoubleClick}

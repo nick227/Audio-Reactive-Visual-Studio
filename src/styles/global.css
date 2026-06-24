@@ -438,6 +438,8 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 .frame-flyer { border-width: 24px; border-style: ridge; }
 .frame-gallery { border-width: 4px; }
 
+.stage-layer.typography-host { width: fit-content; height: fit-content; }
+
 .studio-type { min-width: 260px; padding: 22px 28px; text-align: center; font-weight: 950; letter-spacing: -.06em; line-height: .9; font-size: clamp(34px, 7vw, 86px); text-shadow: 0 18px 38px rgba(0,0,0,.42); }
 .type-neon { text-shadow: 0 0 8px currentColor, 0 0 24px currentColor, 0 0 52px currentColor; border: 3px solid currentColor; border-radius: 18px; letter-spacing: .02em; }
 .type-sticker, .type-bubble { background: currentColor; color: #111119 !important; border-radius: 999px; transform: rotate(-3deg); box-shadow: 0 10px 0 rgba(0,0,0,.3); }
