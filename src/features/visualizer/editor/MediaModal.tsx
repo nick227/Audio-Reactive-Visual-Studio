@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState } from 'react'
 import { Search, Upload, X } from 'lucide-react'
 import { getLayerCatalogItems, filterByLayerType, LAYER_TYPE_FILTERS, type FxItem, type LayerTypeFilter } from '../fx/fxLibrary'
+import { STOCK_IMAGES, STOCK_VIDEOS } from '../assets/stockMedia'
 import { PuppetThumbnail } from './PuppetThumbnail'
 
 export type UploadRecord = { id: string; name: string; url: string; fileKey: string }
 
-type UserMediaItem = UploadRecord & { kind: 'image' | 'video' }
+type MediaItem = UploadRecord & { kind: 'image' | 'video'; stock?: boolean }
 
 type Props = {
   onClose: () => void
@@ -31,17 +32,29 @@ export function MediaModal({
     [query, typeFilter],
   )
 
-  const userMedia = useMemo((): UserMediaItem[] => {
-    if (typeFilter !== 'all' && typeFilter !== 'uploads') return []
+  const imageItems = useMemo((): MediaItem[] => {
+    if (typeFilter !== 'all' && typeFilter !== 'images') return []
     const q = query.trim().toLowerCase()
-    const items: UserMediaItem[] = [
+    const items: MediaItem[] = [
+      ...STOCK_IMAGES.map((item) => ({ ...item, kind: 'image' as const, stock: true })),
       ...uploadedImages.map((item) => ({ ...item, kind: 'image' as const })),
+    ]
+    return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
+  }, [query, typeFilter, uploadedImages])
+
+  const videoItems = useMemo((): MediaItem[] => {
+    if (typeFilter !== 'all' && typeFilter !== 'videos') return []
+    const q = query.trim().toLowerCase()
+    const items: MediaItem[] = [
+      ...STOCK_VIDEOS.map((item) => ({ ...item, kind: 'video' as const, stock: true })),
       ...uploadedVideos.map((item) => ({ ...item, kind: 'video' as const })),
     ]
     return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
-  }, [query, typeFilter, uploadedImages, uploadedVideos])
+  }, [query, typeFilter, uploadedVideos])
 
-  const hasResults = userMedia.length > 0 || catalogItems.length > 0
+  const mediaItems = useMemo(() => [...imageItems, ...videoItems], [imageItems, videoItems])
+
+  const hasResults = mediaItems.length > 0 || catalogItems.length > 0
 
   const handleUpload = (file: File) => {
     if (file.type.startsWith('video/')) onUploadVideo(file)
@@ -104,7 +117,7 @@ export function MediaModal({
         <div className="media-body layer-browser-body">
           {hasResults ? (
             <div className="layer-browser-grid">
-              {userMedia.map((item) => (
+              {mediaItems.map((item) => (
                 <button
                   key={`${item.kind}-${item.id}`}
                   type="button"
@@ -129,6 +142,7 @@ export function MediaModal({
                       />
                     )}
                     {item.kind === 'video' && <span className="media-card-badge">Video</span>}
+                    {item.stock && <span className="media-card-badge media-card-badge--stock">Stock</span>}
                   </div>
                   <div className="media-card-name">{item.name}</div>
                 </button>
@@ -139,9 +153,11 @@ export function MediaModal({
             </div>
           ) : (
             <div className="media-empty-state">
-              {typeFilter === 'uploads' && !query.trim()
-                ? 'No uploads yet — use Upload to add images or video.'
-                : 'No layers match this filter.'}
+              {typeFilter === 'images' && !query.trim()
+                ? 'No images yet — pick a stock image or use Upload.'
+                : typeFilter === 'videos' && !query.trim()
+                  ? 'No videos yet — add files to public/stock/videos/ or use Upload.'
+                  : 'No layers match this filter.'}
             </div>
           )}
         </div>

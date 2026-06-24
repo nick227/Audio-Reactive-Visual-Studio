@@ -17,6 +17,8 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 /* ── Shell ───────────────────────────────────────────────────────────────── */
 .app-shell { min-height: 100vh; }
 .editor-body { max-width: 100%; width:1216px; margin: 0 auto; padding: 14px 14px 40px; display: grid; gap: 8px; }
+.editor-body.film-screen { width:1600px; }
+.editor-body.full-screen { width:100%; }
 
 /* ── Stage ───────────────────────────────────────────────────────────────── */
 .stage-area { display: flex; flex-direction: column; gap: 6px;  }
@@ -793,6 +795,8 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 .media-card-thumb { aspect-ratio: 4 / 3; width: 100%; overflow: hidden; position: relative; background: #11111c; flex-shrink: 0; isolation: isolate; }
 .media-card-thumb img, .media-card-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .media-card-badge { position: absolute; top: 6px; left: 6px; padding: 2px 6px; border-radius: 6px; font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #f2f0ff; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); }
+.media-card-badge--stock { top: auto; bottom: 6px; left: 6px; background: rgba(120,88,255,.72); }
+.media-card-thumb .media-card-badge + .media-card-badge--stock { bottom: 6px; top: auto; left: auto; right: 6px; }
 .media-card-thumb-audio, .media-card-thumb-video { display: grid; place-items: center; color: rgba(255,255,255,.3); }
 .media-card-name { font-size: 10px; font-weight: 600; color: rgba(255,255,255,.65); padding: 5px 7px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .media-card-meta { font-size: 10px; color: rgba(255,255,255,.35); padding: 0 8px 7px; }

@@ -38,18 +38,38 @@ export const puppetItems: FxItem[] = communityAssets
   .filter((asset) => asset.category === 'puppets')
   .map(assetToFxItem)
 
-export type LayerTypeFilter = 'all' | 'uploads' | 'text' | AssetCollection
+export type LayerTypeFilter =
+  | 'all'
+  | 'images'
+  | 'videos'
+  | 'text'
+  | 'backdrop'
+  | 'particles'
+  | 'objects'
+  | 'type-frames'
+  | 'fx-overlays'
 
 export const LAYER_TYPE_FILTERS: { id: LayerTypeFilter; label: string }[] = [
   { id: 'all', label: 'All' },
-  { id: 'uploads', label: 'Uploads' },
+  { id: 'images', label: 'Images' },
+  { id: 'videos', label: 'Videos' },
   { id: 'text', label: 'Text' },
-  ...COMMUNITY_SECTIONS.map(({ collection, label }) => ({ id: collection, label })),
+  { id: 'backdrop', label: 'Backdrops' },
+  { id: 'particles', label: 'Particles' },
+  { id: 'objects', label: 'Objects' },
+  { id: 'type-frames', label: 'Type & Frames' },
+  { id: 'fx-overlays', label: 'FX' },
 ]
 
 export function filterByLayerType(items: FxItem[], filter: LayerTypeFilter): FxItem[] {
-  if (filter === 'all' || filter === 'uploads') return items
+  if (filter === 'all' || filter === 'images' || filter === 'videos') return []
   if (filter === 'text') return items.filter((item) => item.category === 'typography')
+  if (filter === 'backdrop') {
+    return items.filter((item) => item.collection === 'backgrounds' || item.collection === 'visualizers')
+  }
+  if (filter === 'objects') {
+    return items.filter((item) => item.collection === 'objects' || item.collection === 'puppets')
+  }
   return items.filter((item) => item.collection === filter)
 }
 
