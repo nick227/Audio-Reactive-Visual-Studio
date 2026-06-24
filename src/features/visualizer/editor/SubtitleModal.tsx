@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlignLeft, FileText, Loader, Mic2, Palette, Plus, Trash2, Wand2, X } from 'lucide-react'
-import { parseSrt, displayToMs, msToDisplay, MAX_SRT_CUES } from '../subtitles/parseSrt'
+import { parseSrt, displayToMs, msToDisplay, formatSrt, MAX_SRT_CUES } from '../subtitles/parseSrt'
 import type { SrtCue } from '../subtitles/parseSrt'
 import { lyricsToSrt } from '../subtitles/lyricsToSrt'
 import type { LayerInstance, SubtitleStyle } from '../project/types'
@@ -95,19 +95,41 @@ function DragTimeInput({
   )
 }
 
+// ─── Shared SRT text view ─────────────────────────────────────────────────────
+
+function SrtTextView({ cues, className }: { cues: SrtCue[]; className?: string }) {
+  if (cues.length === 0) return null
+  return (
+    <div className="srt-source-panel">
+      <p className="srt-preview-label">SRT · {cues.length} cues</p>
+      <textarea
+        className={`srt-source-input${className ? ` ${className}` : ''}`}
+        readOnly
+        value={formatSrt(cues)}
+        rows={Math.min(16, Math.max(6, cues.length + 2))}
+        spellCheck={false}
+      />
+    </div>
+  )
+}
+
 // ─── Lyrics Tab ───────────────────────────────────────────────────────────────
 
 function LyricsTab({
+  cues,
   audioDuration,
+  onCuesChange,
   onSave,
   onOpenInBuild,
 }: {
+  cues: SrtCue[]
   audioDuration: number
+  onCuesChange: (cues: SrtCue[]) => void
   onSave: (cues: SrtCue[]) => void
   onOpenInBuild: (cues: SrtCue[]) => void
 }) {
-  const [raw, setRaw] = useState('')
-  const [cues, setCues] = useState<SrtCue[] | null>(null)
+  const [raw, setRaw] = useState(() => (cues.length ? formatSrt(cues) : ''))
+  const [converted, setConverted] = useState<SrtCue[] | null>(cues.length ? cues : null)
   const [error, setError] = useState<string | null>(null)
 
   const durationMs = audioDuration > 0 ? audioDuration * 1000 : 0
@@ -115,36 +137,51 @@ function LyricsTab({
     ? `Timing will be fit to your track (${msToDisplay(durationMs)}).`
     : 'No audio loaded — timing will be estimated from text length (~spoken-word pace).'
 
+  const activeCues = converted ?? (cues.length ? cues : null)
+
   const handleConvert = () => {
     const trimmed = raw.trim()
     if (!trimmed) {
       setError('Paste or type your lyrics first.')
-      setCues(null)
+      setConverted(null)
       return
     }
-    const result = lyricsToSrt(trimmed, { durationMs })
+
+    const fromSrt = trimmed.includes('-->') ? parseSrt(trimmed) : []
+    const result = fromSrt.length > 0
+      ? fromSrt
+      : lyricsToSrt(trimmed, { durationMs })
+
     if (result.length === 0) {
       setError('Could not split text into lines.')
-      setCues(null)
+      setConverted(null)
       return
     }
-    setCues(result)
+
+    onCuesChange(result)
+    setConverted(result)
+    setRaw(formatSrt(result))
     setError(null)
   }
 
-  const lastCue = cues?.[cues.length - 1]
+  const lastCue = activeCues?.[activeCues.length - 1]
   const spanLabel = lastCue ? msToDisplay(lastCue.endMs) : null
 
   return (
     <div className="srt-lyrics-tab">
-      <p className="srt-lyrics-hint">{durationHint}</p>
+      <p className="srt-lyrics-hint">
+        {activeCues
+          ? `Loaded subtitles shown as SRT below · ${spanLabel ?? ''}`
+          : durationHint}
+      </p>
 
       <textarea
-        className="srt-lyrics-input"
+        className="srt-lyrics-input srt-source-input"
         placeholder={'Paste or type lyrics…\n\nOne line per subtitle, or separate stanzas with a blank line.'}
         value={raw}
-        onChange={(e) => { setRaw(e.target.value); setCues(null); setError(null) }}
-        rows={10}
+        onChange={(e) => { setRaw(e.target.value); setConverted(null); setError(null) }}
+        rows={12}
+        spellCheck={false}
       />
 
       <div className="srt-lyrics-actions">
@@ -155,29 +192,15 @@ function LyricsTab({
 
       {error && <p className="srt-error">{error}</p>}
 
-      {cues && cues.length > 0 && (
-        <>
-          <div className="srt-preview">
-            <p className="srt-preview-label">Preview · {cues.length} lines · {spanLabel}</p>
-            {cues.slice(0, 4).map((cue) => (
-              <div key={cue.index} className="srt-preview-row">
-                <span className="srt-preview-time">{msToDisplay(cue.startMs)} → {msToDisplay(cue.endMs)}</span>
-                <span className="srt-preview-text">{cue.text.replace(/\n/g, ' ')}</span>
-              </div>
-            ))}
-            {cues.length > 4 && <p className="srt-preview-more">…and {cues.length - 4} more lines</p>}
-            {cues.length >= MAX_SRT_CUES && <p className="srt-warning">Large text — capped at {MAX_SRT_CUES} cues.</p>}
-          </div>
-
-          <div className="srt-tab-actions srt-tab-actions--split">
-            <button type="button" className="srt-secondary-btn" onClick={() => onSave(cues)}>
-              Apply &amp; Close
-            </button>
-            <button type="button" className="srt-add-btn" onClick={() => onOpenInBuild(cues)}>
-              Fine-tune in Build
-            </button>
-          </div>
-        </>
+      {activeCues && activeCues.length > 0 && (
+        <div className="srt-tab-actions srt-tab-actions--split">
+          <button type="button" className="srt-secondary-btn" onClick={() => onSave(activeCues)}>
+            Apply &amp; Close
+          </button>
+          <button type="button" className="srt-add-btn" onClick={() => onOpenInBuild(activeCues)}>
+            Fine-tune in Build
+          </button>
+        </div>
       )}
     </div>
   )
@@ -185,14 +208,14 @@ function LyricsTab({
 
 // ─── Import Tab ───────────────────────────────────────────────────────────────
 
-function ImportTab({ initialCues, onSave }: {
-  initialCues?: SrtCue[]
+function ImportTab({ cues, onCuesChange, onSave }: {
+  cues: SrtCue[]
+  onCuesChange: (cues: SrtCue[]) => void
   onSave: (cues: SrtCue[]) => void
 }) {
-  const [cues, setCues] = useState<SrtCue[] | null>(initialCues ?? null)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
-  const [filename, setFilename] = useState<string | null>(initialCues ? 'current cues' : null)
+  const [filename, setFilename] = useState<string | null>(cues.length ? 'current cues' : null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleFile = (file: File) => {
@@ -203,9 +226,9 @@ function ImportTab({ initialCues, onSave }: {
       const parsed = parseSrt(raw)
       if (parsed.length === 0) {
         setError('Could not parse this file — no valid cues found.')
-        setCues(null)
+        onCuesChange([])
       } else {
-        setCues(parsed)
+        onCuesChange(parsed)
         setFilename(file.name)
         setError(null)
       }
@@ -219,7 +242,7 @@ function ImportTab({ initialCues, onSave }: {
     if (file) handleFile(file)
   }
 
-  const lastCue = cues?.[cues.length - 1]
+  const lastCue = cues[cues.length - 1]
   const durationLabel = lastCue ? msToDisplay(lastCue.endMs) : null
 
   return (
@@ -229,7 +252,7 @@ function ImportTab({ initialCues, onSave }: {
       />
 
       <div
-        className={`srt-dropzone${dragging ? ' srt-dropzone--drag' : ''}${cues ? ' srt-dropzone--loaded' : ''}`}
+        className={`srt-dropzone${dragging ? ' srt-dropzone--drag' : ''}${cues.length ? ' srt-dropzone--loaded' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
@@ -237,7 +260,7 @@ function ImportTab({ initialCues, onSave }: {
         role="button" tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && fileRef.current?.click()}
       >
-        {cues ? (
+        {cues.length > 0 ? (
           <div className="srt-dropzone-loaded">
             <span className="srt-loaded-icon">✓</span>
             <span className="srt-loaded-name">{filename}</span>
@@ -255,19 +278,13 @@ function ImportTab({ initialCues, onSave }: {
 
       {error && <p className="srt-error">{error}</p>}
 
-      {cues && cues.length > 0 && (
+      {cues.length > 0 && (
         <>
-          <div className="srt-preview">
-            <p className="srt-preview-label">Preview</p>
-            {cues.slice(0, 4).map((cue) => (
-              <div key={cue.index} className="srt-preview-row">
-                <span className="srt-preview-time">{msToDisplay(cue.startMs)} → {msToDisplay(cue.endMs)}</span>
-                <span className="srt-preview-text">{cue.text.replace(/\n/g, ' ')}</span>
-              </div>
-            ))}
-            {cues.length > 4 && <p className="srt-preview-more">…and {cues.length - 4} more cues</p>}
-            {cues.length >= MAX_SRT_CUES && <p className="srt-warning">Large file — capped at {MAX_SRT_CUES} cues.</p>}
-          </div>
+          <SrtTextView cues={cues} />
+
+          {cues.length >= MAX_SRT_CUES && (
+            <p className="srt-warning">Large file — capped at {MAX_SRT_CUES} cues.</p>
+          )}
 
           <div className="srt-tab-actions">
             <button type="button" className="srt-add-btn" onClick={() => onSave(cues)}>
@@ -291,6 +308,17 @@ function newCueAfter(prev?: BuildCue): BuildCue {
 
 function cuesFromSrt(srt: SrtCue[]): BuildCue[] {
   return srt.map((c) => ({ id: crypto.randomUUID(), startMs: c.startMs, endMs: c.endMs, text: c.text }))
+}
+
+function buildCuesToSrt(cues: BuildCue[]): SrtCue[] {
+  return cues
+    .filter((c) => c.text.trim())
+    .map((c, i) => ({
+      index: i + 1,
+      startMs: c.startMs,
+      endMs: Math.max(c.endMs, c.startMs + 100),
+      text: c.text.trim(),
+    }))
 }
 
 function BuildTab({
@@ -347,13 +375,13 @@ function BuildTab({
   const isFirstCueRender = useRef(true)
   useEffect(() => {
     if (isFirstCueRender.current) { isFirstCueRender.current = false; return }
-    const valid = cues.filter((c) => c.text.trim()).map((c, i): SrtCue => ({
-      index: i + 1, startMs: c.startMs, endMs: Math.max(c.endMs, c.startMs + 100), text: c.text.trim(),
-    }))
+    const valid = buildCuesToSrt(cues)
     if (valid.length === 0) return
     const timer = setTimeout(() => onAutoSaveRef.current(valid), 400)
     return () => clearTimeout(timer)
   }, [cues])
+
+  const srtCues = buildCuesToSrt(cues)
 
   const markStart = useCallback(() => {
     setCues((prev) => prev.map((c) => c.id === focusedId ? { ...c, startMs: currentMs } : c))
@@ -561,6 +589,8 @@ function BuildTab({
 
       </div>
 
+      {srtCues.length > 0 && <SrtTextView cues={srtCues} />}
+
       <div className="srt-tab-actions">
         <button type="button" className="srt-add-btn" onClick={() => addCue()}>
           <Plus size={13} /> Add New Line
@@ -665,7 +695,7 @@ function StyleTab({ layer, onUpdate }: { layer: LayerInstance; onUpdate: (patch:
 
 const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: 'lyrics', label: 'Lyrics',     icon: Mic2     },
-  { id: 'import', label: 'Import SRT', icon: FileText },
+  { id: 'import', label: 'SRT', icon: FileText },
   { id: 'build',  label: 'Build',      icon: AlignLeft },
   { id: 'style',  label: 'Style',      icon: Palette  },
 ]
@@ -678,26 +708,35 @@ export function SubtitleModal({
   const defaultTab: TabId = initialCues.length > 0 ? 'build' : 'lyrics'
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab)
   const [saving, setSaving] = useState(false)
+  const [cues, setCues] = useState<SrtCue[]>(initialCues)
   const [buildTabKey, setBuildTabKey] = useState(0)
-  const [buildTabCues, setBuildTabCues] = useState<SrtCue[] | undefined>(undefined)
 
-  const handleSave = (cues: SrtCue[]) => {
+  const handleCuesChange = useCallback((next: SrtCue[]) => {
+    setCues(next)
+  }, [])
+
+  const persistCues = useCallback((next: SrtCue[]) => {
+    setCues(next)
+    onSave(next)
+  }, [onSave])
+
+  const handleSave = (next: SrtCue[]) => {
+    setCues(next)
     setSaving(true)
     setTimeout(() => {
-      onSave(cues)
+      onSave(next)
       setSaving(false)
       onClose()
     }, 60)
   }
 
-  const handleOpenInBuild = (cues: SrtCue[]) => {
-    onSave(cues)
-    setBuildTabCues(cues)
+  const handleOpenInBuild = (next: SrtCue[]) => {
+    persistCues(next)
     setBuildTabKey((k) => k + 1)
     setActiveTab('build')
   }
 
-  const buildInitialCues = buildTabCues ?? (initialCues.length > 0 ? initialCues : undefined)
+  const buildInitialCues = cues.length > 0 ? cues : undefined
 
   const handleStyleUpdate = (patch: Partial<LayerInstance>) => {
     onUpdateLayer(patch)
@@ -707,8 +746,8 @@ export function SubtitleModal({
     if (e.target === e.currentTarget) onClose()
   }
 
-  const cueCount = initialCues.length
-  const lastCue = initialCues[initialCues.length - 1]
+  const cueCount = cues.length
+  const lastCue = cues[cues.length - 1]
   const cueSummary = cueCount > 0
     ? `${cueCount} cues · ${msToDisplay((lastCue?.endMs ?? 0))}`
     : 'No cues loaded'
@@ -720,13 +759,11 @@ export function SubtitleModal({
         <div className="fx-browser-tools">
           <div className="modal-tab-strip">
             {TABS.map((tab) => {
-              const Icon = tab.icon
               return (
                 <button key={tab.id} type="button"
                   className={`modal-tab-btn${activeTab === tab.id ? ' active' : ''}`}
                   onClick={() => setActiveTab(tab.id)}
                 >
-                  <Icon size={13} />
                   {tab.label}
                 </button>
               )
@@ -750,13 +787,15 @@ export function SubtitleModal({
 
           {activeTab === 'lyrics' && (
             <LyricsTab
+              cues={cues}
               audioDuration={audioDuration}
+              onCuesChange={handleCuesChange}
               onSave={handleSave}
               onOpenInBuild={handleOpenInBuild}
             />
           )}
           {activeTab === 'import' && (
-            <ImportTab initialCues={initialCues.length > 0 ? initialCues : undefined} onSave={handleSave} />
+            <ImportTab cues={cues} onCuesChange={handleCuesChange} onSave={handleSave} />
           )}
           {activeTab === 'build' && (
             <BuildTab
@@ -764,7 +803,7 @@ export function SubtitleModal({
               waveformPeaks={waveformPeaks}
               audioSrc={audioSrc}
               audioDuration={audioDuration}
-              onAutoSave={onSave}
+              onAutoSave={persistCues}
               initialCues={buildInitialCues}
             />
           )}

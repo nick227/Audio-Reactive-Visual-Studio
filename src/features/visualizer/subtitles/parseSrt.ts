@@ -105,6 +105,16 @@ export function msToSrtTime(ms: number): string {
   return `${pad2(h)}:${pad2(min)}:${pad2(s)},${pad3(msRem)}`
 }
 
+/** Serialize cues to a standard .srt document string. */
+export function formatSrt(cues: SrtCue[]): string {
+  return cues
+    .map((cue, i) => {
+      const index = cue.index || i + 1
+      return `${index}\n${msToSrtTime(cue.startMs)} --> ${msToSrtTime(cue.endMs)}\n${cue.text}`
+    })
+    .join('\n\n')
+}
+
 /** Format milliseconds as compact display time: m:ss.s */
 export function msToDisplay(ms: number): string {
   const totalS = ms / 1000

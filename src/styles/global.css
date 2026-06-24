@@ -953,6 +953,18 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 }
 .srt-secondary-btn:hover { background: rgba(255,255,255,.08); color: #fff; }
 
+.srt-source-panel { display: grid; gap: 6px; }
+.srt-source-input {
+  width: 100%; resize: vertical;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(0,0,0,.32); color: rgba(255,255,255,.82);
+  font-size: 11px; line-height: 1.5; font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+  tab-size: 2;
+}
+.srt-source-input:focus { outline: none; border-color: rgba(140,108,255,.4); }
+.srt-source-input[readonly] { cursor: default; color: rgba(255,255,255,.72); }
+
 /* ── Build tab ───────────────────────────────────────────────────────────── */
 .srt-build-tab { display: grid; gap: 12px; }
 
