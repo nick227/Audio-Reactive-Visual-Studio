@@ -95,24 +95,6 @@ function DragTimeInput({
   )
 }
 
-// ─── Shared SRT text view ─────────────────────────────────────────────────────
-
-function SrtTextView({ cues, className }: { cues: SrtCue[]; className?: string }) {
-  if (cues.length === 0) return null
-  return (
-    <div className="srt-source-panel">
-      <p className="srt-preview-label">SRT · {cues.length} cues</p>
-      <textarea
-        className={`srt-source-input${className ? ` ${className}` : ''}`}
-        readOnly
-        value={formatSrt(cues)}
-        rows={Math.min(16, Math.max(6, cues.length + 2))}
-        spellCheck={false}
-      />
-    </div>
-  )
-}
-
 // ─── Lyrics Tab ───────────────────────────────────────────────────────────────
 
 function LyricsTab({
@@ -120,13 +102,11 @@ function LyricsTab({
   audioDuration,
   onCuesChange,
   onSave,
-  onOpenInBuild,
 }: {
   cues: SrtCue[]
   audioDuration: number
   onCuesChange: (cues: SrtCue[]) => void
   onSave: (cues: SrtCue[]) => void
-  onOpenInBuild: (cues: SrtCue[]) => void
 }) {
   const [raw, setRaw] = useState(() => (cues.length ? formatSrt(cues) : ''))
   const [converted, setConverted] = useState<SrtCue[] | null>(cues.length ? cues : null)
@@ -193,12 +173,9 @@ function LyricsTab({
       {error && <p className="srt-error">{error}</p>}
 
       {activeCues && activeCues.length > 0 && (
-        <div className="srt-tab-actions srt-tab-actions--split">
-          <button type="button" className="srt-secondary-btn" onClick={() => onSave(activeCues)}>
+        <div className="srt-tab-actions">
+          <button type="button" className="srt-add-btn" onClick={() => onSave(activeCues)}>
             Apply &amp; Close
-          </button>
-          <button type="button" className="srt-add-btn" onClick={() => onOpenInBuild(activeCues)}>
-            Fine-tune in Build
           </button>
         </div>
       )}
@@ -208,8 +185,18 @@ function LyricsTab({
 
 // ─── Import Tab ───────────────────────────────────────────────────────────────
 
-function ImportTab({ cues, onCuesChange, onSave }: {
+function cuesEqual(a: SrtCue[], b: SrtCue[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((c, i) =>
+    c.startMs === b[i].startMs && c.endMs === b[i].endMs && c.text === b[i].text,
+  )
+}
+
+// ─── Import Tab ───────────────────────────────────────────────────────────────
+
+function ImportTab({ cues, savedCues, onCuesChange, onSave }: {
   cues: SrtCue[]
+  savedCues: SrtCue[]
   onCuesChange: (cues: SrtCue[]) => void
   onSave: (cues: SrtCue[]) => void
 }) {
@@ -244,6 +231,7 @@ function ImportTab({ cues, onCuesChange, onSave }: {
 
   const lastCue = cues[cues.length - 1]
   const durationLabel = lastCue ? msToDisplay(lastCue.endMs) : null
+  const importPending = cues.length > 0 && !cuesEqual(cues, savedCues)
 
   return (
     <div className="srt-import-tab">
@@ -278,20 +266,16 @@ function ImportTab({ cues, onCuesChange, onSave }: {
 
       {error && <p className="srt-error">{error}</p>}
 
-      {cues.length > 0 && (
-        <>
-          <SrtTextView cues={cues} />
+      {cues.length >= MAX_SRT_CUES && (
+        <p className="srt-warning">Large file — capped at {MAX_SRT_CUES} cues.</p>
+      )}
 
-          {cues.length >= MAX_SRT_CUES && (
-            <p className="srt-warning">Large file — capped at {MAX_SRT_CUES} cues.</p>
-          )}
-
-          <div className="srt-tab-actions">
-            <button type="button" className="srt-add-btn" onClick={() => onSave(cues)}>
-              Apply Subtitles
-            </button>
-          </div>
-        </>
+      {importPending && (
+        <div className="srt-tab-actions">
+          <button type="button" className="srt-add-btn" onClick={() => onSave(cues)}>
+            Apply Subtitles
+          </button>
+        </div>
       )}
     </div>
   )
@@ -380,8 +364,6 @@ function BuildTab({
     const timer = setTimeout(() => onAutoSaveRef.current(valid), 400)
     return () => clearTimeout(timer)
   }, [cues])
-
-  const srtCues = buildCuesToSrt(cues)
 
   const markStart = useCallback(() => {
     setCues((prev) => prev.map((c) => c.id === focusedId ? { ...c, startMs: currentMs } : c))
@@ -589,8 +571,6 @@ function BuildTab({
 
       </div>
 
-      {srtCues.length > 0 && <SrtTextView cues={srtCues} />}
-
       <div className="srt-tab-actions">
         <button type="button" className="srt-add-btn" onClick={() => addCue()}>
           <Plus size={13} /> Add New Line
@@ -709,7 +689,7 @@ export function SubtitleModal({
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab)
   const [saving, setSaving] = useState(false)
   const [cues, setCues] = useState<SrtCue[]>(initialCues)
-  const [buildTabKey, setBuildTabKey] = useState(0)
+  const [savedCues, setSavedCues] = useState<SrtCue[]>(initialCues)
 
   const handleCuesChange = useCallback((next: SrtCue[]) => {
     setCues(next)
@@ -717,23 +697,19 @@ export function SubtitleModal({
 
   const persistCues = useCallback((next: SrtCue[]) => {
     setCues(next)
+    setSavedCues(next)
     onSave(next)
   }, [onSave])
 
   const handleSave = (next: SrtCue[]) => {
     setCues(next)
+    setSavedCues(next)
     setSaving(true)
     setTimeout(() => {
       onSave(next)
       setSaving(false)
       onClose()
     }, 60)
-  }
-
-  const handleOpenInBuild = (next: SrtCue[]) => {
-    persistCues(next)
-    setBuildTabKey((k) => k + 1)
-    setActiveTab('build')
   }
 
   const buildInitialCues = cues.length > 0 ? cues : undefined
@@ -791,15 +767,18 @@ export function SubtitleModal({
               audioDuration={audioDuration}
               onCuesChange={handleCuesChange}
               onSave={handleSave}
-              onOpenInBuild={handleOpenInBuild}
             />
           )}
           {activeTab === 'import' && (
-            <ImportTab cues={cues} onCuesChange={handleCuesChange} onSave={handleSave} />
+            <ImportTab
+              cues={cues}
+              savedCues={savedCues}
+              onCuesChange={handleCuesChange}
+              onSave={handleSave}
+            />
           )}
           {activeTab === 'build' && (
             <BuildTab
-              key={buildTabKey}
               waveformPeaks={waveformPeaks}
               audioSrc={audioSrc}
               audioDuration={audioDuration}
