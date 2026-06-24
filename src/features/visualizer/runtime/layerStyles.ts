@@ -6,10 +6,16 @@ import { isTypographyLayer } from './layerVisualKind'
 
 type StageSize = Pick<StageEntity, 'width' | 'height'>
 
-export function layerHostStyle(layer: LayerInstance, transform: EffectTransform, stage: StageSize, currentTimeMs = 0): CSSProperties {
+export function layerHostStyle(
+  layer: LayerInstance,
+  transform: EffectTransform,
+  stage: StageSize,
+  currentTimeMs = 0,
+  durationMs = 0,
+): CSSProperties {
   const size = fitSize(layer)
   const position = layerPosition(transform, stage)
-  const visible = isLayerVisibleAtTime(layer, currentTimeMs)
+  const visible = isLayerVisibleAtTime(layer, currentTimeMs, durationMs)
 
   return {
     position: 'absolute',

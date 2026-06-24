@@ -74,6 +74,8 @@ export function VisualizerEditor() {
   const [subtitleOpen, setSubtitleOpen] = useState(false)
   const [editingSubtitleLayerId, setEditingSubtitleLayerId] = useState<string | null>(null)
   const [currentTimeMs, setCurrentTimeMs] = useState(0)
+  const playbackTimeMsRef = useRef(0)
+  const exportActiveRef = useRef(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const engineRef = useRef<AudioEngine | null>(null)
   const rafRef = useRef<number | null>(null)
@@ -84,6 +86,13 @@ export function VisualizerEditor() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tickRef = useRef<(time: number) => void>(() => {})
   const exportCancelRef = useRef(false)
+
+  const syncStageFrame = useCallback((timeMs: number) => {
+    playbackTimeMsRef.current = timeMs
+    const engine = engineRef.current
+    const features = engine?.getFeatures() ?? silentAudioFeatures
+    stageRef.current?.updateFrame(features, performance.now(), timeMs)
+  }, [])
 
   const activeStagePreset = useMemo(() => stagePresets.find((p) => p.width === project.stage.width && p.height === project.stage.height)?.id ?? 'desktop', [project.stage.height, project.stage.width])
   const hasAudio = Boolean(project.audio?.url)
@@ -427,9 +436,12 @@ export function VisualizerEditor() {
 
   const exportPng = useCallback(async () => {
     const stageEl = stageRef.current?.getStageElement()
+    const audio = audioRef.current
     if (!stageEl) return
     setIsExporting(true)
     try {
+      const ms = (audio?.currentTime ?? 0) * 1000
+      syncStageFrame(ms)
       const scale = project.stage.width / stageEl.offsetWidth
       const canvas = await html2canvas(stageEl, { scale, useCORS: true, allowTaint: true, logging: false })
       const url = canvas.toDataURL('image/png')
@@ -440,7 +452,7 @@ export function VisualizerEditor() {
     } finally {
       setIsExporting(false)
     }
-  }, [project.name, project.stage.width])
+  }, [project.name, project.stage.width, syncStageFrame])
 
   // ── Audio ────────────────────────────────────────────────────────────────────
 
@@ -492,13 +504,15 @@ export function VisualizerEditor() {
     if (!audio || !engine) return
 
     const features = engine.getFeatures()
-    stageRef.current?.updateFrame(features, time, audio.currentTime * 1000)
+    const playbackMs = audio.currentTime * 1000
+    playbackTimeMsRef.current = playbackMs
+    stageRef.current?.updateFrame(features, time, playbackMs)
 
-    if (time - lastUiFrameRef.current >= UI_FRAME_INTERVAL_MS) {
+    if (!exportActiveRef.current && time - lastUiFrameRef.current >= UI_FRAME_INTERVAL_MS) {
       lastUiFrameRef.current = time
       setMeterFeatures(features)
       setProgress(audio.duration ? audio.currentTime / audio.duration : 0)
-      setCurrentTimeMs(audio.currentTime * 1000)
+      setCurrentTimeMs(playbackMs)
     }
 
     if (!audio.paused) rafRef.current = requestAnimationFrame(tickRef.current)
@@ -525,10 +539,10 @@ export function VisualizerEditor() {
     const audio = audioRef.current
     if (!audio || !audio.duration) return
     audio.currentTime = ratio * audio.duration
-    setProgress(ratio)
     const ms = audio.currentTime * 1000
+    setProgress(ratio)
     setCurrentTimeMs(ms)
-    stageRef.current?.updateFrame(engineRef.current?.getFeatures() ?? silentAudioFeatures, performance.now(), ms)
+    syncStageFrame(ms)
   }
 
   const exportWebm = useCallback(async () => {
@@ -554,6 +568,7 @@ export function VisualizerEditor() {
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
 
     exportCancelRef.current = false
+    exportActiveRef.current = true
     setIsExportingVideo(true)
     setExportVideoProgress(0)
 
@@ -571,6 +586,8 @@ export function VisualizerEditor() {
     // captureStream samples the canvas at 15fps regardless of our frame rate.
     while (!exportCancelRef.current && !audio.ended && audio.currentTime < duration) {
       try {
+        const frameMs = audio.currentTime * 1000
+        syncStageFrame(frameMs)
         const frame = await html2canvas(stageEl, { scale: 1, useCORS: true, allowTaint: true, logging: false })
         ctx.drawImage(frame, 0, 0, displayW, displayH)
       } catch { /* skip frame */ }
@@ -580,6 +597,7 @@ export function VisualizerEditor() {
     }
 
     stopPlayback()
+    exportActiveRef.current = false
     recorder.stop()
     await new Promise<void>((r) => { recorder.onstop = () => r() })
 
@@ -595,7 +613,7 @@ export function VisualizerEditor() {
 
     setIsExportingVideo(false)
     setExportVideoProgress(0)
-  }, [project.audio?.duration, project.name, stopPlayback])
+  }, [project.audio?.duration, project.name, stopPlayback, syncStageFrame])
 
   // ── Stage preset ─────────────────────────────────────────────────────────────
 
@@ -673,6 +691,8 @@ export function VisualizerEditor() {
           currentTimeMs={currentTimeMs}
           onSelect={setSelectedLayerId}
           onUpdate={updateLayer}
+          onUpdateTransient={updateLayerTransient}
+          onTimingDragStart={snapshotForDrag}
           onRemove={removeLayer}
           onReorder={reorderLayers}
           onEditSubtitleLayer={editSubtitleLayer}

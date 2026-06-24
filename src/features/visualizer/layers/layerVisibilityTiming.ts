@@ -2,19 +2,28 @@ import { createEntityId } from '../entities/entityTypes'
 import type { LayerInstance, LayerTiming, LayerVisibilityGap } from '../project/types'
 import { DEFAULT_LAYER_TIMING } from '../project/types'
 
-export const MOVE_THRESHOLD_PX = 5
+export const MOVE_THRESHOLD_PX = 8
 export const EDGE_THRESHOLD_PX = 10
 export const MIN_GAP_MS = 400
 const IDEAL_GAP_RATIO = 0.08
 const MIN_CREATE_MS = 1500
 const MAX_CREATE_MS = 8000
 
+export function isDurationKnown(durationMs: number): boolean {
+  return durationMs > 0
+}
+
 export function layerTiming(layer: LayerInstance): LayerTiming {
   return layer.timing ?? DEFAULT_LAYER_TIMING
 }
 
-export function isLayerVisibleAtTime(layer: LayerInstance, currentTimeMs: number): boolean {
+export function isLayerVisibleAtTime(
+  layer: LayerInstance,
+  currentTimeMs: number,
+  durationMs = 0,
+): boolean {
   if (!layer.visible) return false
+  if (!isDurationKnown(durationMs)) return true
   const timing = layerTiming(layer)
   if (timing.mode === 'always') return true
   return timing.gaps.some((gap) => currentTimeMs >= gap.startMs && currentTimeMs <= gap.endMs)
@@ -144,38 +153,44 @@ export function resizeGapEdge(
   return normalizeGaps(sorted.map((g) => (g.id === gapId ? { ...g, endMs } : g)), durationMs)
 }
 
+export function gapRoomAt(
+  gaps: LayerVisibilityGap[],
+  clickMs: number,
+  durationMs: number,
+): { start: number; end: number; size: number } | null {
+  const sorted = normalizeGaps(gaps, durationMs)
+  let prevEnd = 0
+  for (const gap of sorted) {
+    if (clickMs < gap.startMs) {
+      return { start: prevEnd, end: gap.startMs, size: gap.startMs - prevEnd }
+    }
+    prevEnd = gap.endMs
+  }
+  return { start: prevEnd, end: durationMs, size: durationMs - prevEnd }
+}
+
 export function addGapAt(
   gaps: LayerVisibilityGap[],
   clickMs: number,
   durationMs: number,
 ): LayerVisibilityGap[] {
   const sorted = normalizeGaps(gaps, durationMs)
-  const ideal = idealGapDuration(durationMs)
-  let startMs = clickMs - ideal / 2
-  let endMs = clickMs + ideal / 2
+  const room = gapRoomAt(sorted, clickMs, durationMs)
+  if (!room || room.size < MIN_GAP_MS) return sorted
 
-  let prevEnd = 0
-  for (const gap of sorted) {
-    if (clickMs < gap.startMs) {
-      const roomStart = prevEnd
-      const roomEnd = gap.startMs
-      startMs = Math.max(roomStart, Math.min(startMs, roomEnd - MIN_GAP_MS))
-      endMs = Math.min(roomEnd, startMs + ideal)
-      startMs = Math.max(roomStart, endMs - ideal)
-      if (endMs - startMs < MIN_GAP_MS) return sorted
-      return normalizeGaps(
-        [...sorted, { id: createEntityId('vgap'), startMs, endMs }],
-        durationMs,
-      )
-    }
-    prevEnd = gap.endMs
+  const span = Math.min(idealGapDuration(durationMs), room.size)
+  if (span < MIN_GAP_MS) return sorted
+
+  let startMs = clickMs - span / 2
+  let endMs = clickMs + span / 2
+  if (startMs < room.start) {
+    startMs = room.start
+    endMs = startMs + span
   }
-
-  const roomStart = prevEnd
-  const roomEnd = durationMs
-  startMs = Math.max(roomStart, Math.min(startMs, roomEnd - MIN_GAP_MS))
-  endMs = Math.min(roomEnd, startMs + ideal)
-  startMs = Math.max(roomStart, endMs - ideal)
+  if (endMs > room.end) {
+    endMs = room.end
+    startMs = endMs - span
+  }
   if (endMs - startMs < MIN_GAP_MS) return sorted
 
   return normalizeGaps(

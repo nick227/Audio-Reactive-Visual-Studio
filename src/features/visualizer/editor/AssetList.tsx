@@ -13,13 +13,16 @@ type Props = {
   currentTimeMs: number
   onSelect: (layerId: string) => void
   onUpdate: (layerId: string, patch: Partial<LayerInstance>) => void
+  onUpdateTransient: (layerId: string, patch: Partial<LayerInstance>) => void
+  onTimingDragStart: () => void
   onRemove: (layerId: string) => void
   onReorder: (layers: LayerInstance[]) => void
   onEditSubtitleLayer?: (layerId: string) => void
 }
 
 export function AssetList({
-  layers, selectedLayerId, durationMs, currentTimeMs, onSelect, onUpdate, onRemove, onReorder, onEditSubtitleLayer,
+  layers, selectedLayerId, durationMs, currentTimeMs, onSelect, onUpdate, onUpdateTransient,
+  onTimingDragStart, onRemove, onReorder, onEditSubtitleLayer,
 }: Props) {
   const [settingsLayerId, setSettingsLayerId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -125,7 +128,9 @@ export function AssetList({
               durationMs={durationMs}
               currentTimeMs={currentTimeMs}
               timing={layer.timing}
-              onChange={(timing) => onUpdate(layer.id, { timing })}
+              onDragStart={onTimingDragStart}
+              onChangeTransient={(timing) => onUpdateTransient(layer.id, { timing })}
+              onCommit={(timing) => onUpdate(layer.id, { timing })}
             />
 
             <button

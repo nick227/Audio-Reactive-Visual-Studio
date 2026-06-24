@@ -42,11 +42,13 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
   const smoothedValuesRef = useRef(new Map<string, number>())
   const microEventEngineRef = useRef(new MicroEventEngine())
   const stageRatio = `${project.stage.width} / ${project.stage.height}`
+  const durationMs = (project.audio?.duration ?? 0) * 1000
 
   useImperativeHandle(ref, () => ({
     getStageElement: () => stageElRef.current,
     updateFrame(features, time, currentTimeMs = 0) {
       const current = projectRef.current
+      const audioDurationMs = (current.audio?.duration ?? 0) * 1000
       puppetRuntimeHost.setFeatures(features)
       const activeEffects = microEventEngineRef.current.tick(features, time, current.microEvents ?? [])
 
@@ -59,7 +61,7 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
           smoothedValuesRef.current.set(layer.id, smoothed)
 
           const microEffect = layer.role ? activeEffects.get(layer.role) : undefined
-          applyLayerFrame(el, layer, features, smoothed, time, current.stage, microEffect, currentTimeMs)
+          applyLayerFrame(el, layer, features, smoothed, time, current.stage, microEffect, currentTimeMs, audioDurationMs)
 
           // Per-bar audio update for audioVisualizer layers
           if (features.bins) {
@@ -110,6 +112,7 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
               onTextChange={onTextChange}
               onTextCommit={onTextCommit}
               currentTimeMs={currentTimeMs}
+              durationMs={durationMs}
             />
           </LayerErrorBoundary>
         ))}
@@ -132,14 +135,15 @@ type LayerProps = {
   onTextChange?: (layerId: string, text: string) => void
   onTextCommit?: (layerId: string, text: string) => void
   currentTimeMs: number
+  durationMs: number
 }
 
-const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stageHeight, setRef, onSelectLayer, onUpdateLayer, onDragStart, onDoubleClick, isEditing, onTextChange, onTextCommit, currentTimeMs }: LayerProps) {
+const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stageHeight, setRef, onSelectLayer, onUpdateLayer, onDragStart, onDoubleClick, isEditing, onTextChange, onTextCommit, currentTimeMs, durationMs }: LayerProps) {
   const template = assetRegistry.get(layer.templateId)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const initialTransform = computeLayerTransform(layer, silentAudioFeatures, 0)
   const stageSize = useMemo(() => ({ width: stageWidth, height: stageHeight }), [stageHeight, stageWidth])
-  const style = layerHostStyle(layer, initialTransform, stageSize, currentTimeMs)
+  const style = layerHostStyle(layer, initialTransform, stageSize, currentTimeMs, durationMs)
   const content = useMemo(
     () => isEditing ? null : renderLayerContent(layer, currentTimeMs),
     // eslint-disable-next-line react-hooks/exhaustive-deps
