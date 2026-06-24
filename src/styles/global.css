@@ -912,6 +912,7 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 .srt-preview-more { margin: 0; font-size: 11px; color: rgba(255,255,255,.3); }
 
 .srt-tab-actions { display: flex; justify-content: flex-end; padding-top: 4px; }
+.srt-tab-actions--split { gap: 8px; }
 .srt-add-btn {
   height: 34px; padding: 0 18px; border-radius: 9px;
   background: rgba(120,88,255,.85); color: #fff; font-size: 13px; font-weight: 700;
@@ -919,6 +920,38 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
   display: inline-flex; align-items: center; gap: 6px;
 }
 .srt-add-btn:hover:not(:disabled) { background: rgba(140,108,255,1); }
+
+/* ── Lyrics tab ───────────────────────────────────────────────────────────── */
+.srt-lyrics-tab { display: grid; gap: 12px; }
+.srt-lyrics-hint { margin: 0; font-size: 11px; color: rgba(255,255,255,.42); line-height: 1.45; }
+.srt-lyrics-input {
+  width: 100%; min-height: 180px; resize: vertical;
+  padding: 12px 14px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.28); color: #fff;
+  font-size: 13px; line-height: 1.55; font-family: inherit;
+}
+.srt-lyrics-input:focus {
+  outline: none; border-color: rgba(140,108,255,.55);
+  box-shadow: 0 0 0 2px rgba(140,108,255,.15);
+}
+.srt-lyrics-input::placeholder { color: rgba(255,255,255,.28); }
+.srt-lyrics-actions { display: flex; justify-content: flex-start; }
+.srt-convert-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 8px; border: none;
+  background: rgba(255,255,255,.1); color: #fff;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.srt-convert-btn:hover:not(:disabled) { background: rgba(255,255,255,.16); }
+.srt-convert-btn:disabled { opacity: .4; cursor: default; }
+.srt-secondary-btn {
+  padding: 8px 14px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: transparent; color: rgba(255,255,255,.75);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.srt-secondary-btn:hover { background: rgba(255,255,255,.08); color: #fff; }
 
 /* ── Build tab ───────────────────────────────────────────────────────────── */
 .srt-build-tab { display: grid; gap: 12px; }

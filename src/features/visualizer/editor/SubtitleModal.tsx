@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlignLeft, FileText, Loader, Palette, Plus, Trash2, X } from 'lucide-react'
+import { AlignLeft, FileText, Loader, Mic2, Palette, Plus, Trash2, Wand2, X } from 'lucide-react'
 import { parseSrt, displayToMs, msToDisplay, MAX_SRT_CUES } from '../subtitles/parseSrt'
 import type { SrtCue } from '../subtitles/parseSrt'
+import { lyricsToSrt } from '../subtitles/lyricsToSrt'
 import type { LayerInstance, SubtitleStyle } from '../project/types'
 
-type TabId = 'import' | 'build' | 'style'
+type TabId = 'lyrics' | 'import' | 'build' | 'style'
 
 type Props = {
   onClose: () => void
@@ -91,6 +92,94 @@ function DragTimeInput({
     >
       {msToDisplay(ms)}
     </span>
+  )
+}
+
+// ─── Lyrics Tab ───────────────────────────────────────────────────────────────
+
+function LyricsTab({
+  audioDuration,
+  onSave,
+  onOpenInBuild,
+}: {
+  audioDuration: number
+  onSave: (cues: SrtCue[]) => void
+  onOpenInBuild: (cues: SrtCue[]) => void
+}) {
+  const [raw, setRaw] = useState('')
+  const [cues, setCues] = useState<SrtCue[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const durationMs = audioDuration > 0 ? audioDuration * 1000 : 0
+  const durationHint = durationMs > 0
+    ? `Timing will be fit to your track (${msToDisplay(durationMs)}).`
+    : 'No audio loaded — timing will be estimated from text length (~spoken-word pace).'
+
+  const handleConvert = () => {
+    const trimmed = raw.trim()
+    if (!trimmed) {
+      setError('Paste or type your lyrics first.')
+      setCues(null)
+      return
+    }
+    const result = lyricsToSrt(trimmed, { durationMs })
+    if (result.length === 0) {
+      setError('Could not split text into lines.')
+      setCues(null)
+      return
+    }
+    setCues(result)
+    setError(null)
+  }
+
+  const lastCue = cues?.[cues.length - 1]
+  const spanLabel = lastCue ? msToDisplay(lastCue.endMs) : null
+
+  return (
+    <div className="srt-lyrics-tab">
+      <p className="srt-lyrics-hint">{durationHint}</p>
+
+      <textarea
+        className="srt-lyrics-input"
+        placeholder={'Paste or type lyrics…\n\nOne line per subtitle, or separate stanzas with a blank line.'}
+        value={raw}
+        onChange={(e) => { setRaw(e.target.value); setCues(null); setError(null) }}
+        rows={10}
+      />
+
+      <div className="srt-lyrics-actions">
+        <button type="button" className="srt-convert-btn" onClick={handleConvert} disabled={!raw.trim()}>
+          <Wand2 size={13} /> Convert
+        </button>
+      </div>
+
+      {error && <p className="srt-error">{error}</p>}
+
+      {cues && cues.length > 0 && (
+        <>
+          <div className="srt-preview">
+            <p className="srt-preview-label">Preview · {cues.length} lines · {spanLabel}</p>
+            {cues.slice(0, 4).map((cue) => (
+              <div key={cue.index} className="srt-preview-row">
+                <span className="srt-preview-time">{msToDisplay(cue.startMs)} → {msToDisplay(cue.endMs)}</span>
+                <span className="srt-preview-text">{cue.text.replace(/\n/g, ' ')}</span>
+              </div>
+            ))}
+            {cues.length > 4 && <p className="srt-preview-more">…and {cues.length - 4} more lines</p>}
+            {cues.length >= MAX_SRT_CUES && <p className="srt-warning">Large text — capped at {MAX_SRT_CUES} cues.</p>}
+          </div>
+
+          <div className="srt-tab-actions srt-tab-actions--split">
+            <button type="button" className="srt-secondary-btn" onClick={() => onSave(cues)}>
+              Apply &amp; Close
+            </button>
+            <button type="button" className="srt-add-btn" onClick={() => onOpenInBuild(cues)}>
+              Fine-tune in Build
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -575,9 +664,10 @@ function StyleTab({ layer, onUpdate }: { layer: LayerInstance; onUpdate: (patch:
 // ─── Modal shell ──────────────────────────────────────────────────────────────
 
 const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
+  { id: 'lyrics', label: 'Lyrics',     icon: Mic2     },
   { id: 'import', label: 'Import SRT', icon: FileText },
   { id: 'build',  label: 'Build',      icon: AlignLeft },
-  { id: 'style',  label: 'Style',      icon: Palette },
+  { id: 'style',  label: 'Style',      icon: Palette  },
 ]
 
 export function SubtitleModal({
@@ -585,9 +675,11 @@ export function SubtitleModal({
   waveformPeaks, audioSrc, audioDuration,
 }: Props) {
   const initialCues = (editingLayer.settings.cues ?? []) as SrtCue[]
-  const defaultTab: TabId = initialCues.length > 0 ? 'build' : 'import'
+  const defaultTab: TabId = initialCues.length > 0 ? 'build' : 'lyrics'
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab)
   const [saving, setSaving] = useState(false)
+  const [buildTabKey, setBuildTabKey] = useState(0)
+  const [buildTabCues, setBuildTabCues] = useState<SrtCue[] | undefined>(undefined)
 
   const handleSave = (cues: SrtCue[]) => {
     setSaving(true)
@@ -597,6 +689,15 @@ export function SubtitleModal({
       onClose()
     }, 60)
   }
+
+  const handleOpenInBuild = (cues: SrtCue[]) => {
+    onSave(cues)
+    setBuildTabCues(cues)
+    setBuildTabKey((k) => k + 1)
+    setActiveTab('build')
+  }
+
+  const buildInitialCues = buildTabCues ?? (initialCues.length > 0 ? initialCues : undefined)
 
   const handleStyleUpdate = (patch: Partial<LayerInstance>) => {
     onUpdateLayer(patch)
@@ -647,16 +748,24 @@ export function SubtitleModal({
             </div>
           )}
 
+          {activeTab === 'lyrics' && (
+            <LyricsTab
+              audioDuration={audioDuration}
+              onSave={handleSave}
+              onOpenInBuild={handleOpenInBuild}
+            />
+          )}
           {activeTab === 'import' && (
             <ImportTab initialCues={initialCues.length > 0 ? initialCues : undefined} onSave={handleSave} />
           )}
           {activeTab === 'build' && (
             <BuildTab
+              key={buildTabKey}
               waveformPeaks={waveformPeaks}
               audioSrc={audioSrc}
               audioDuration={audioDuration}
               onAutoSave={onSave}
-              initialCues={initialCues.length > 0 ? initialCues : undefined}
+              initialCues={buildInitialCues}
             />
           )}
           {activeTab === 'style' && (
