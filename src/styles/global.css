@@ -241,37 +241,21 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 .lr-settings-icon-btn.danger:hover { background: rgba(255,80,80,.15); color: #ff8a8a; }
 
 /* Layer visibility strip */
-.layer-vis-wrap {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1 1 180px;
-  min-width: 120px;
-}
 .layer-vis-strip {
   position: relative;
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 1 1 180px;
+  min-width: 120px;
   height: 28px;
   border-radius: 6px;
   touch-action: none;
   user-select: none;
+  outline: none;
 }
-.layer-vis-delete {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+.layer-vis-strip:focus-visible {
+  box-shadow: 0 0 0 2px rgba(120,88,255,.45);
 }
-.layer-vis-delete.hidden {
-  visibility: hidden;
-  pointer-events: none;
-}
-.layer-vis-delete:not(:disabled):hover {
-  background: rgba(255,80,80,.15);
-  color: #ff9a9a;
-}
-.layer-vis-gap.selected {
-  box-shadow: 0 0 0 1px rgba(255,255,255,.55), 0 0 10px rgba(120,88,255,.5);
+.layer-vis-strip.has-selection:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255,79,216,.35), 0 0 0 3px rgba(120,88,255,.4);
 }
 .layer-vis-strip.disabled { opacity: .45; pointer-events: none; }
 .layer-vis-strip.no-duration .layer-vis-rail {
@@ -308,6 +292,9 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 .layer-vis-gap.always { background: linear-gradient(180deg, rgba(196,176,255,.72), rgba(120,88,255,.48)); }
 .layer-vis-gap.hot {
   box-shadow: 0 0 0 1px rgba(210,196,255,.7), 0 0 10px rgba(120,88,255,.45);
+}
+.layer-vis-gap.selected {
+  box-shadow: 0 0 0 1px rgba(255,255,255,.55), 0 0 10px rgba(120,88,255,.5);
 }
 .layer-vis-handle {
   position: absolute;

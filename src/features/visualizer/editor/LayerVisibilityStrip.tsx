@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Trash2 } from 'lucide-react'
 import type { LayerTiming } from '../project/types'
 import { DEFAULT_LAYER_TIMING } from '../project/types'
 import {
@@ -74,13 +73,13 @@ export function LayerVisibilityStrip({
     setActiveGapId(null)
   }, [gaps, onCommit, pulseAlways])
 
-  const deleteSelectedGap = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!activeGapId || showFilled) return
-    commitRemoveGap(activeGapId)
-  }, [activeGapId, commitRemoveGap, showFilled])
+  useEffect(() => {
+    if (activeGapId && !gaps.some((g) => g.id === activeGapId)) {
+      setActiveGapId(null)
+    }
+  }, [activeGapId, gaps])
 
-  const canDeleteGap = durationReady && !showFilled && Boolean(activeGapId)
+  const focusStrip = () => railRef.current?.focus()
 
   const localX = useCallback((clientX: number) => {
     const rail = railRef.current
@@ -137,6 +136,7 @@ export function LayerVisibilityStrip({
         snapshotted: false,
       }
       setActiveGapId(hit.gap.id)
+      focusStrip()
     } else if (hit.gap && hit.zone === 'body') {
       const ms = xToMs(x, width, safeDuration)
       dragRef.current = {
@@ -148,6 +148,7 @@ export function LayerVisibilityStrip({
         snapshotted: false,
       }
       setActiveGapId(hit.gap.id)
+      focusStrip()
     } else {
       dragRef.current = {
         mode: { kind: 'click' },
@@ -204,6 +205,7 @@ export function LayerVisibilityStrip({
 
     if (drag?.moved) {
       setHover(null)
+      focusStrip()
       return
     }
 
@@ -217,9 +219,18 @@ export function LayerVisibilityStrip({
       const nextGaps = trimGapAt(gaps, hit.gap.id, clickMs, safeDuration)
       onCommit({ mode: 'gaps', gaps: nextGaps })
       setActiveGapId(hit.gap.id)
+      focusStrip()
       return
     }
     if (!hit.gap) setActiveGapId(null)
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return
+    if (!activeGapId || showFilled) return
+    e.preventDefault()
+    e.stopPropagation()
+    commitRemoveGap(activeGapId)
   }
 
   const onDoubleClick = (e: React.MouseEvent) => {
@@ -244,6 +255,7 @@ export function LayerVisibilityStrip({
     if (nextGaps.length > gaps.length) {
       onCommit({ mode: 'gaps', gaps: nextGaps })
       setActiveGapId(nextGaps[nextGaps.length - 1]?.id ?? null)
+      focusStrip()
     }
   }
 
@@ -260,55 +272,47 @@ export function LayerVisibilityStrip({
           : 'crosshair'
 
   return (
-    <div className="layer-vis-wrap">
-      <div
-        ref={railRef}
-        className={`layer-vis-strip${!durationReady ? ' disabled no-duration' : ''}${isDragging ? ' dragging' : ''}${flashAlways ? ' flash-always' : ''}`}
-        style={{ cursor }}
-        onPointerDown={onPointerDown}
-        onPointerMove={(e) => { onPointerMoveHover(e); onPointerMove(e) }}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerLeave}
-        onPointerCancel={onPointerUp}
-        onDoubleClick={onDoubleClick}
-        onClick={(e) => e.stopPropagation()}
-        title={durationReady ? 'Layer visibility timeline' : 'Add audio to edit timing — layer stays fully visible'}
-      >
-        <div className="layer-vis-rail" />
-        {showFilled ? (
-          <div className={`layer-vis-gap always${!durationReady ? ' pending' : ''}`} style={{ left: 0, width: '100%' }} />
-        ) : (
-          gaps.map((gap) => {
-            const left = `${(gap.startMs / safeDuration) * 100}%`
-            const width = `${((gap.endMs - gap.startMs) / safeDuration) * 100}%`
-            const hot = activeGapId === gap.id || hover?.gapId === gap.id
-            return (
-              <div
-                key={gap.id}
-                className={`layer-vis-gap${hot ? ' hot' : ''}${activeGapId === gap.id ? ' selected' : ''}`}
-                style={{ left, width }}
-              >
-                <span className="layer-vis-handle start" />
-                <span className="layer-vis-handle end" />
-              </div>
-            )
-          })
-        )}
-        {hover && hover.zone === 'body' && hover.gapId && !showFilled && (
-          <div className="layer-vis-cut-preview" style={{ left: cutPreviewPct }} />
-        )}
-        {durationReady && <div className="layer-vis-playhead" style={{ left: playheadPct }} />}
-      </div>
-      <button
-        type="button"
-        className={`lr-btn layer-vis-delete${canDeleteGap ? '' : ' hidden'}`}
-        title="Delete selected visible section"
-        aria-label="Delete selected visible section"
-        disabled={!canDeleteGap}
-        onClick={deleteSelectedGap}
-      >
-        <Trash2 size={11} />
-      </button>
+    <div
+      ref={railRef}
+      className={`layer-vis-strip${!durationReady ? ' disabled no-duration' : ''}${isDragging ? ' dragging' : ''}${flashAlways ? ' flash-always' : ''}${activeGapId ? ' has-selection' : ''}`}
+      style={{ cursor }}
+      tabIndex={durationReady ? 0 : -1}
+      role="group"
+      aria-label="Layer visibility timeline"
+      onPointerDown={onPointerDown}
+      onPointerMove={(e) => { onPointerMoveHover(e); onPointerMove(e) }}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerLeave}
+      onPointerCancel={onPointerUp}
+      onDoubleClick={onDoubleClick}
+      onKeyDown={onKeyDown}
+      onClick={(e) => e.stopPropagation()}
+      title={durationReady ? 'Layer visibility timeline — Delete removes selected section' : 'Add audio to edit timing — layer stays fully visible'}
+    >
+      <div className="layer-vis-rail" />
+      {showFilled ? (
+        <div className={`layer-vis-gap always${!durationReady ? ' pending' : ''}`} style={{ left: 0, width: '100%' }} />
+      ) : (
+        gaps.map((gap) => {
+          const left = `${(gap.startMs / safeDuration) * 100}%`
+          const width = `${((gap.endMs - gap.startMs) / safeDuration) * 100}%`
+          const hot = activeGapId === gap.id || hover?.gapId === gap.id
+          return (
+            <div
+              key={gap.id}
+              className={`layer-vis-gap${hot ? ' hot' : ''}${activeGapId === gap.id ? ' selected' : ''}`}
+              style={{ left, width }}
+            >
+              <span className="layer-vis-handle start" />
+              <span className="layer-vis-handle end" />
+            </div>
+          )
+        })
+      )}
+      {hover && hover.zone === 'body' && hover.gapId && !showFilled && (
+        <div className="layer-vis-cut-preview" style={{ left: cutPreviewPct }} />
+      )}
+      {durationReady && <div className="layer-vis-playhead" style={{ left: playheadPct }} />}
     </div>
   )
 }
