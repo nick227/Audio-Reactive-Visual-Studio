@@ -2,8 +2,8 @@ import { createEntityId } from '../entities/entityTypes'
 import type { LayerInstance, LayerTiming, LayerVisibilityGap } from '../project/types'
 import { DEFAULT_LAYER_TIMING } from '../project/types'
 
-export const MOVE_THRESHOLD_PX = 4
-export const EDGE_THRESHOLD_PX = 6
+export const MOVE_THRESHOLD_PX = 5
+export const EDGE_THRESHOLD_PX = 10
 export const MIN_GAP_MS = 400
 const IDEAL_GAP_RATIO = 0.08
 const MIN_CREATE_MS = 1500
