@@ -239,6 +239,72 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 .lr-settings-icon-btn:hover { background: rgba(255,255,255,.12); color: #fff; }
 .lr-settings-icon-btn.danger:hover { background: rgba(255,80,80,.15); color: #ff8a8a; }
 
+/* Layer visibility strip */
+.layer-vis-strip {
+  position: relative;
+  flex: 0 1 88px;
+  width: 88px;
+  min-width: 56px;
+  height: 14px;
+  border-radius: 4px;
+  touch-action: none;
+  user-select: none;
+}
+.layer-vis-strip.disabled { opacity: .28; pointer-events: none; }
+.layer-vis-rail {
+  position: absolute;
+  inset: 4px 0;
+  border-radius: 3px;
+  background: rgba(255,255,255,.06);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+}
+.layer-vis-gap {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(196,176,255,.82), rgba(120,88,255,.55));
+  box-shadow: 0 0 0 1px rgba(196,176,255,.25);
+  pointer-events: none;
+}
+.layer-vis-gap.always { background: linear-gradient(180deg, rgba(196,176,255,.55), rgba(120,88,255,.35)); }
+.layer-vis-gap.hot {
+  box-shadow: 0 0 0 1px rgba(196,176,255,.55), 0 0 8px rgba(120,88,255,.35);
+}
+.layer-vis-handle {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: #f2f0ff;
+  opacity: 0;
+  transition: opacity 90ms linear;
+}
+.layer-vis-gap.hot .layer-vis-handle { opacity: .9; }
+.layer-vis-handle.start { left: 1px; }
+.layer-vis-handle.end { right: 1px; }
+.layer-vis-playhead,
+.layer-vis-cut-preview {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.layer-vis-playhead {
+  background: #ff4fd8;
+  box-shadow: 0 0 6px rgba(255,79,216,.65);
+  z-index: 3;
+}
+.layer-vis-cut-preview {
+  background: rgba(255,255,255,.55);
+  z-index: 2;
+}
+.lr-eye-btn { flex-shrink: 0; }
+
 /* ── Shared modal chrome ─────────────────────────────────────────────────── */
 .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,0); backdrop-filter: blur(0px); }
 .modal-close-btn {

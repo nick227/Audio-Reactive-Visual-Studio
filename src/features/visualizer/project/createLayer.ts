@@ -1,4 +1,5 @@
 import type { AssetTemplate, LayerInstance } from './types'
+import { DEFAULT_LAYER_TIMING } from './types'
 import { createEntityId, nowIso } from '../entities/entityTypes'
 
 export function createLayerFromTemplate(template: AssetTemplate, overrides: Partial<LayerInstance> = {}): LayerInstance {
@@ -29,6 +30,7 @@ export function createLayerFromTemplate(template: AssetTemplate, overrides: Part
       smoothness: 0.22,
     },
     settings: {},
+    timing: DEFAULT_LAYER_TIMING,
   }
 
   return {
@@ -49,6 +51,12 @@ export function createLayerFromTemplate(template: AssetTemplate, overrides: Part
       ...base.settings,
       ...template.defaultLayer.settings,
       ...overrides.settings,
+    },
+    timing: {
+      ...DEFAULT_LAYER_TIMING,
+      ...template.defaultLayer.timing,
+      ...overrides.timing,
+      gaps: overrides.timing?.gaps ?? template.defaultLayer.timing?.gaps ?? DEFAULT_LAYER_TIMING.gaps,
     },
     updatedAt: nowIso(),
   }

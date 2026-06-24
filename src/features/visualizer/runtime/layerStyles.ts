@@ -1,13 +1,15 @@
 import type { CSSProperties } from 'react'
 import type { LayerInstance, StageEntity } from '../project/types'
 import type { EffectTransform } from './effects'
+import { isLayerVisibleAtTime } from '../layers/layerVisibilityTiming'
 import { isTypographyLayer } from './layerVisualKind'
 
 type StageSize = Pick<StageEntity, 'width' | 'height'>
 
-export function layerHostStyle(layer: LayerInstance, transform: EffectTransform, stage: StageSize): CSSProperties {
+export function layerHostStyle(layer: LayerInstance, transform: EffectTransform, stage: StageSize, currentTimeMs = 0): CSSProperties {
   const size = fitSize(layer)
   const position = layerPosition(transform, stage)
+  const visible = isLayerVisibleAtTime(layer, currentTimeMs)
 
   return {
     position: 'absolute',
@@ -20,7 +22,7 @@ export function layerHostStyle(layer: LayerInstance, transform: EffectTransform,
     filter: transform.filter,
     transformOrigin: 'center center',
     pointerEvents: layer.locked ? 'none' : 'auto',
-    display: layer.visible ? 'block' : 'none',
+    display: visible ? 'block' : 'none',
     transition: 'filter 90ms linear',
     ['--asset-object-fit' as string]: objectFit(layer),
   }

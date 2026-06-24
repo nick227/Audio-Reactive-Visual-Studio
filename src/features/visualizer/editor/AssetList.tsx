@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, EyeOff, Settings2, Trash2 } from 'lucide-react'
 import { assetRegistry } from '../assets/registry'
 import type { AssetControl, AudioTrigger, FitMode, LayerInstance } from '../project/types'
+import { LayerVisibilityStrip } from './LayerVisibilityStrip'
 
 const triggers: AudioTrigger[] = ['none', 'vocals']
 
 type Props = {
   layers: LayerInstance[]
   selectedLayerId: string
+  durationMs: number
+  currentTimeMs: number
   onSelect: (layerId: string) => void
   onUpdate: (layerId: string, patch: Partial<LayerInstance>) => void
   onRemove: (layerId: string) => void
@@ -16,7 +19,7 @@ type Props = {
 }
 
 export function AssetList({
-  layers, selectedLayerId, onSelect, onUpdate, onRemove, onReorder, onEditSubtitleLayer,
+  layers, selectedLayerId, durationMs, currentTimeMs, onSelect, onUpdate, onRemove, onReorder, onEditSubtitleLayer,
 }: Props) {
   const [settingsLayerId, setSettingsLayerId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -117,6 +120,22 @@ export function AssetList({
             >
               {layer.name}
             </span>
+
+            <LayerVisibilityStrip
+              durationMs={durationMs}
+              currentTimeMs={currentTimeMs}
+              timing={layer.timing}
+              onChange={(timing) => onUpdate(layer.id, { timing })}
+            />
+
+            <button
+              type="button"
+              className="lr-btn lr-eye-btn"
+              title={layer.visible ? 'Hide layer' : 'Show layer'}
+              onClick={(e) => { e.stopPropagation(); onUpdate(layer.id, { visible: !layer.visible }) }}
+            >
+              {layer.visible ? <Eye size={12} /> : <EyeOff size={12} />}
+            </button>
 
             <div className="lr-pop" onClick={sp}>
               <button

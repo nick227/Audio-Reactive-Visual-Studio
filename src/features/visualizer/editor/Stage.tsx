@@ -14,7 +14,7 @@ import { isTypographyLayer, resolveVisualKind } from '../runtime/layerVisualKind
 import { puppetRuntimeHost } from '../runtime/puppetRuntimeHost'
 
 export type StageHandle = {
-  updateFrame: (features: AudioFeatures, time: number) => void
+  updateFrame: (features: AudioFeatures, time: number, currentTimeMs?: number) => void
   getStageElement: () => HTMLDivElement | null
 }
 
@@ -45,7 +45,7 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
 
   useImperativeHandle(ref, () => ({
     getStageElement: () => stageElRef.current,
-    updateFrame(features, time) {
+    updateFrame(features, time, currentTimeMs = 0) {
       const current = projectRef.current
       puppetRuntimeHost.setFeatures(features)
       const activeEffects = microEventEngineRef.current.tick(features, time, current.microEvents ?? [])
@@ -59,7 +59,7 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
           smoothedValuesRef.current.set(layer.id, smoothed)
 
           const microEffect = layer.role ? activeEffects.get(layer.role) : undefined
-          applyLayerFrame(el, layer, features, smoothed, time, current.stage, microEffect)
+          applyLayerFrame(el, layer, features, smoothed, time, current.stage, microEffect, currentTimeMs)
 
           // Per-bar audio update for audioVisualizer layers
           if (features.bins) {
@@ -139,11 +139,11 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
   const hostRef = useRef<HTMLDivElement | null>(null)
   const initialTransform = computeLayerTransform(layer, silentAudioFeatures, 0)
   const stageSize = useMemo(() => ({ width: stageWidth, height: stageHeight }), [stageHeight, stageWidth])
-  const style = layerHostStyle(layer, initialTransform, stageSize)
+  const style = layerHostStyle(layer, initialTransform, stageSize, currentTimeMs)
   const content = useMemo(
     () => isEditing ? null : renderLayerContent(layer, currentTimeMs),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layer.id, layer.templateId, layer.settings, layer.settings.color, layer.name, layer.placement.fit, isEditing, currentTimeMs],
+    [layer.id, layer.templateId, layer.settings, layer.settings.color, layer.name, layer.placement.fit, layer.timing, layer.visible, isEditing, currentTimeMs],
   )
 
   if (!template) return null

@@ -50,6 +50,19 @@ export type LayerReaction = {
   smoothness: number
 }
 
+export type LayerVisibilityGap = {
+  id: string
+  startMs: number
+  endMs: number
+}
+
+export type LayerTiming = {
+  mode: 'always' | 'gaps'
+  gaps: LayerVisibilityGap[]
+}
+
+export const DEFAULT_LAYER_TIMING: LayerTiming = { mode: 'always', gaps: [] }
+
 export type LayerInstance = EntityBase<'layer'> & {
   templateId: EntityId
   name: string
@@ -59,6 +72,7 @@ export type LayerInstance = EntityBase<'layer'> & {
   placement: LayerPlacement
   reaction: LayerReaction
   settings: Record<string, unknown>
+  timing?: LayerTiming
 }
 
 export type AudioTrackEntity = EntityBase<'audio-track'> & {

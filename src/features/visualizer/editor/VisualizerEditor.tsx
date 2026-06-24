@@ -44,6 +44,7 @@ function applyLayerPatch(layers: LayerInstance[], layerId: string, patch: Partia
           placement: { ...layer.placement, ...patch.placement },
           reaction: { ...layer.reaction, ...patch.reaction },
           settings: { ...layer.settings, ...patch.settings },
+          timing: patch.timing ?? layer.timing,
           updatedAt: nowIso(),
         }
       : layer
@@ -491,7 +492,7 @@ export function VisualizerEditor() {
     if (!audio || !engine) return
 
     const features = engine.getFeatures()
-    stageRef.current?.updateFrame(features, time)
+    stageRef.current?.updateFrame(features, time, audio.currentTime * 1000)
 
     if (time - lastUiFrameRef.current >= UI_FRAME_INTERVAL_MS) {
       lastUiFrameRef.current = time
@@ -525,6 +526,9 @@ export function VisualizerEditor() {
     if (!audio || !audio.duration) return
     audio.currentTime = ratio * audio.duration
     setProgress(ratio)
+    const ms = audio.currentTime * 1000
+    setCurrentTimeMs(ms)
+    stageRef.current?.updateFrame(engineRef.current?.getFeatures() ?? silentAudioFeatures, performance.now(), ms)
   }
 
   const exportWebm = useCallback(async () => {
@@ -665,6 +669,8 @@ export function VisualizerEditor() {
         <AssetList
           layers={project.layers}
           selectedLayerId={selectedLayerId}
+          durationMs={(project.audio?.duration ?? 0) * 1000}
+          currentTimeMs={currentTimeMs}
           onSelect={setSelectedLayerId}
           onUpdate={updateLayer}
           onRemove={removeLayer}

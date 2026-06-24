@@ -1,6 +1,7 @@
 import type { AudioFeatures } from '../audio/audioTypes'
 import type { LayerInstance, StageEntity } from '../project/types'
 import type { ActiveMicroEffect } from './microEventEngine'
+import { isLayerVisibleAtTime } from '../layers/layerVisibilityTiming'
 import { computeLayerTransform } from './effects'
 import { applyLayerPositionStyles } from './layerStyles'
 
@@ -14,10 +15,11 @@ export function applyLayerFrame(
   time: number,
   stage: StageSize,
   microEffect?: ActiveMicroEffect,
+  currentTimeMs = 0,
 ) {
   const transform = computeLayerTransform(layer, features, time, smoothedValue, microEffect)
   applyLayerPositionStyles(el, transform, stage)
   el.style.opacity = String(transform.opacity)
   el.style.filter = transform.filter
-  el.style.display = layer.visible ? 'block' : 'none'
+  el.style.display = isLayerVisibleAtTime(layer, currentTimeMs) ? 'block' : 'none'
 }
