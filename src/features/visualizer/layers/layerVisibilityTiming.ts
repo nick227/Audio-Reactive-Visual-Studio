@@ -205,6 +205,62 @@ export function removeGap(gaps: LayerVisibilityGap[], gapId: string): LayerTimin
   return { mode: 'gaps', gaps: next }
 }
 
+export type GapClipboard = {
+  spanMs: number
+}
+
+let gapClipboard: GapClipboard | null = null
+
+export function copyGapClipboard(gap: LayerVisibilityGap): GapClipboard {
+  const template = { spanMs: gap.endMs - gap.startMs }
+  gapClipboard = template
+  return template
+}
+
+export function peekGapClipboard(): GapClipboard | null {
+  return gapClipboard
+}
+
+export function roomAfter(
+  gaps: LayerVisibilityGap[],
+  afterMs: number,
+  durationMs: number,
+): { start: number; end: number; size: number } | null {
+  const sorted = normalizeGaps(gaps, durationMs)
+  const start = Math.max(0, Math.min(durationMs, afterMs))
+  for (const gap of sorted) {
+    if (gap.endMs <= start) continue
+    if (gap.startMs > start) {
+      return { start, end: gap.startMs, size: gap.startMs - start }
+    }
+    return null
+  }
+  return { start, end: durationMs, size: durationMs - start }
+}
+
+export function pasteGapAfter(
+  gaps: LayerVisibilityGap[],
+  afterMs: number,
+  spanMs: number,
+  durationMs: number,
+): { gaps: LayerVisibilityGap[]; gapId: string | null; endMs: number | null } {
+  const sorted = normalizeGaps(gaps, durationMs)
+  const span = Math.max(MIN_GAP_MS, spanMs)
+  const room = roomAfter(sorted, afterMs, durationMs)
+  if (!room || room.size < span) {
+    return { gaps: sorted, gapId: null, endMs: null }
+  }
+
+  const startMs = room.start
+  const endMs = startMs + span
+  const gapId = createEntityId('vgap')
+  const next = normalizeGaps(
+    [...sorted, { id: gapId, startMs, endMs }],
+    durationMs,
+  )
+  return { gaps: next, gapId, endMs }
+}
+
 export type GapHitZone = 'start' | 'end' | 'body' | 'empty'
 
 export function hitTestGap(

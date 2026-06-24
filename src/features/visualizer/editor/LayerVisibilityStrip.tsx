@@ -5,10 +5,13 @@ import {
   MOVE_THRESHOLD_PX,
   addGapAt,
   convertAlwaysAt,
+  copyGapClipboard,
   hitTestGap,
   isDurationKnown,
   moveGap,
   normalizeGaps,
+  pasteGapAfter,
+  peekGapClipboard,
   removeGap,
   resizeGapEdge,
   trimGapAt,
@@ -41,6 +44,7 @@ export function LayerVisibilityStrip({
   const [activeGapId, setActiveGapId] = useState<string | null>(null)
   const [flashAlways, setFlashAlways] = useState(false)
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pasteAnchorMsRef = useRef<number | null>(null)
   const dragRef = useRef<{
     mode: DragMode
     moved: boolean
@@ -80,6 +84,12 @@ export function LayerVisibilityStrip({
   }, [activeGapId, gaps])
 
   const focusStrip = () => railRef.current?.focus()
+
+  const selectGap = useCallback((gapId: string) => {
+    setActiveGapId(gapId)
+    const gap = gaps.find((g) => g.id === gapId)
+    if (gap) pasteAnchorMsRef.current = gap.endMs
+  }, [gaps])
 
   const localX = useCallback((clientX: number) => {
     const rail = railRef.current
@@ -135,7 +145,7 @@ export function LayerVisibilityStrip({
         baseGaps: gaps,
         snapshotted: false,
       }
-      setActiveGapId(hit.gap.id)
+      selectGap(hit.gap.id)
       focusStrip()
     } else if (hit.gap && hit.zone === 'body') {
       const ms = xToMs(x, width, safeDuration)
@@ -147,7 +157,7 @@ export function LayerVisibilityStrip({
         baseGaps: gaps,
         snapshotted: false,
       }
-      setActiveGapId(hit.gap.id)
+      selectGap(hit.gap.id)
       focusStrip()
     } else {
       dragRef.current = {
@@ -218,7 +228,7 @@ export function LayerVisibilityStrip({
     if (hit.gap && hit.zone === 'body') {
       const nextGaps = trimGapAt(gaps, hit.gap.id, clickMs, safeDuration)
       onCommit({ mode: 'gaps', gaps: nextGaps })
-      setActiveGapId(hit.gap.id)
+      selectGap(hit.gap.id)
       focusStrip()
       return
     }
@@ -226,6 +236,36 @@ export function LayerVisibilityStrip({
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    const mod = e.metaKey || e.ctrlKey
+
+    if (mod && e.key.toLowerCase() === 'c') {
+      if (!activeGapId || showFilled) return
+      const gap = gaps.find((g) => g.id === activeGapId)
+      if (!gap) return
+      e.preventDefault()
+      e.stopPropagation()
+      copyGapClipboard(gap)
+      pasteAnchorMsRef.current = gap.endMs
+      return
+    }
+
+    if (mod && e.key.toLowerCase() === 'v') {
+      const clipboard = peekGapClipboard()
+      if (!clipboard || showFilled || !durationReady) return
+      const selected = activeGapId ? gaps.find((g) => g.id === activeGapId) : null
+      const afterMs = pasteAnchorMsRef.current ?? selected?.endMs
+      if (afterMs == null) return
+      e.preventDefault()
+      e.stopPropagation()
+      const result = pasteGapAfter(gaps, afterMs, clipboard.spanMs, safeDuration)
+      if (!result.gapId || result.endMs == null) return
+      onCommit({ mode: 'gaps', gaps: result.gaps })
+      selectGap(result.gapId)
+      pasteAnchorMsRef.current = result.endMs
+      focusStrip()
+      return
+    }
+
     if (e.key !== 'Delete' && e.key !== 'Backspace') return
     if (!activeGapId || showFilled) return
     e.preventDefault()
@@ -254,7 +294,8 @@ export function LayerVisibilityStrip({
     const nextGaps = addGapAt(gaps, clickMs, safeDuration)
     if (nextGaps.length > gaps.length) {
       onCommit({ mode: 'gaps', gaps: nextGaps })
-      setActiveGapId(nextGaps[nextGaps.length - 1]?.id ?? null)
+      const newId = nextGaps[nextGaps.length - 1]?.id
+      if (newId) selectGap(newId)
       focusStrip()
     }
   }
@@ -287,7 +328,7 @@ export function LayerVisibilityStrip({
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
       onClick={(e) => e.stopPropagation()}
-      title={durationReady ? 'Layer visibility timeline — Delete removes selected section' : 'Add audio to edit timing — layer stays fully visible'}
+      title={durationReady ? 'Layer visibility — Delete removes section, Ctrl+C/V duplicates' : 'Add audio to edit timing — layer stays fully visible'}
     >
       <div className="layer-vis-rail" />
       {showFilled ? (
