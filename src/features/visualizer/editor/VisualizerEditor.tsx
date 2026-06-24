@@ -375,61 +375,9 @@ export function VisualizerEditor() {
     if (selectedLayerId === layerId) setSelectedLayerId('')
   }, [commitProject, selectedLayerId])
 
-  const duplicateLayer = useCallback(async (layerId: string) => {
-    const layer = project.layers.find((l) => l.id === layerId)
-    if (!layer) return
-    const timestamp = nowIso()
-    let newSettings = { ...layer.settings }
-
-    const srcKey = layer.settings.srcKey
-    if (typeof srcKey === 'string' && srcKey) {
-      try {
-        const blob = await idbGet(srcKey)
-        if (blob) {
-          const newKey = `img_${Date.now()}_copy`
-          await idbPut(newKey, blob)
-          const newUrl = registerObjectUrl(URL.createObjectURL(blob))
-          newSettings = { ...newSettings, srcKey: newKey, src: newUrl }
-        }
-      } catch { /* IDB unavailable — share blob URL with ref counting */ }
-    } else if (typeof layer.settings.src === 'string' && String(layer.settings.src).startsWith('blob:')) {
-      registerObjectUrl(String(layer.settings.src))
-    }
-
-    const newLayer: LayerInstance = {
-      ...layer,
-      settings: newSettings,
-      id: createEntityId('layer'),
-      name: `${layer.name} (copy)`,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }
-    commitProject((current) => {
-      const index = current.layers.findIndex((l) => l.id === layerId)
-      const layers = [...current.layers]
-      layers.splice(index + 1, 0, newLayer)
-      return { ...current, layers }
-    })
-    setSelectedLayerId(newLayer.id)
-  }, [commitProject, project.layers, registerObjectUrl])
-
-  const moveLayer = useCallback((layerId: string, direction: -1 | 1) => {
-    commitProject((current) => {
-      const layers = [...current.layers]
-      const index = layers.findIndex((l) => l.id === layerId)
-      const nextIndex = index + direction
-      if (index < 0 || nextIndex < 0 || nextIndex >= layers.length) return current
-      const [layer] = layers.splice(index, 1)
-      layers.splice(nextIndex, 0, layer)
-      return { ...current, layers }
-    })
+  const reorderLayers = useCallback((layers: LayerInstance[]) => {
+    commitProject((current) => ({ ...current, layers }))
   }, [commitProject])
-
-  const resetLayerPlacement = useCallback((layerId: string) => {
-    updateLayer(layerId, {
-      placement: { fit: 'contain', x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, anchor: 'center' },
-    })
-  }, [updateLayer])
 
   // ── Project-level operations ─────────────────────────────────────────────────
 
@@ -703,9 +651,7 @@ export function VisualizerEditor() {
           onSelect={setSelectedLayerId}
           onUpdate={updateLayer}
           onRemove={removeLayer}
-          onMove={moveLayer}
-          onDuplicate={(id) => void duplicateLayer(id)}
-          onResetPlacement={resetLayerPlacement}
+          onReorder={reorderLayers}
           onEditSubtitleLayer={editSubtitleLayer}
         />
 
