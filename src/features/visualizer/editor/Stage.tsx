@@ -1,4 +1,4 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type CSSProperties } from 'react'
+import { createContext, forwardRef, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, type CSSProperties } from 'react'
 import type { AudioFeatures } from '../audio/audioTypes'
 import { silentAudioFeatures } from '../audio/audioTypes' // silentAudioFeatures used for initial StageLayer render
 import type { LayerInstance, Project } from '../project/types'
@@ -18,9 +18,16 @@ export type StageHandle = {
   getStageElement: () => HTMLDivElement | null
 }
 
+type VideoAnalyserEntry = { analyser: AnalyserNode; data: Uint8Array<ArrayBuffer> }
+// Shared registry so VideoLayerPlayer can register analysers that updateFrame reads.
+const VideoAnalyserContext = createContext<React.MutableRefObject<Map<string, VideoAnalyserEntry>>>(
+  { current: new Map() }
+)
+
 type Props = {
   project: Project
   selectedLayerId: string
+  isPlaying: boolean
   onSelectLayer: (layerId: string) => void
   onUpdateLayer: (layerId: string, patch: Partial<LayerInstance>) => void
   onDragStart?: () => void
@@ -32,7 +39,7 @@ type Props = {
 }
 
 export const Stage = forwardRef<StageHandle, Props>(function Stage(
-  { project, selectedLayerId, onSelectLayer, onUpdateLayer, onDragStart, onDoubleClickLayer, editingLayerId, onTextChange, onTextCommit, currentTimeMs = 0 },
+  { project, selectedLayerId, isPlaying, onSelectLayer, onUpdateLayer, onDragStart, onDoubleClickLayer, editingLayerId, onTextChange, onTextCommit, currentTimeMs = 0 },
   ref,
 ) {
   const layerRefs = useRef(new Map<string, HTMLDivElement>())
@@ -41,6 +48,7 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
   projectRef.current = project
   const smoothedValuesRef = useRef(new Map<string, number>())
   const microEventEngineRef = useRef(new MicroEventEngine())
+  const videoAnalysersRef = useRef(new Map<string, VideoAnalyserEntry>())
   const stageRatio = `${project.stage.width} / ${project.stage.height}`
   const durationMs = (project.audio?.duration ?? 0) * 1000
 
@@ -55,7 +63,23 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
       for (const layer of current.layers) {
         const el = layerRefs.current.get(layer.id)
         if (el) {
-          const raw = audioValue(features, layer.reaction.trigger)
+          // When bassSource === 'video', read bass from the video's own AudioAnalyser.
+          let raw: number
+          if (layer.settings.bassSource === 'video') {
+            const entry = videoAnalysersRef.current.get(layer.id)
+            if (entry) {
+              entry.analyser.getByteFrequencyData(entry.data)
+              let sum = 0
+              const end = Math.min(12, entry.data.length)
+              for (let i = 0; i < end; i++) sum += entry.data[i]
+              raw = Math.min(1, (sum / end / 255) * 1.35)
+            } else {
+              raw = audioValue(features, layer.reaction.trigger)
+            }
+          } else {
+            raw = audioValue(features, layer.reaction.trigger)
+          }
+
           const prev = smoothedValuesRef.current.get(layer.id) ?? raw
           const smoothed = prev * layer.reaction.smoothness + raw * (1 - layer.reaction.smoothness)
           smoothedValuesRef.current.set(layer.id, smoothed)
@@ -94,30 +118,33 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
   }, [onDoubleClickLayer])
 
   return (
-    <div className="stage-wrap">
-      <div ref={stageElRef} className="stage" style={{ aspectRatio: stageRatio, background: project.stage.backgroundColor }} onPointerDown={() => onSelectLayer('')}>
-        {project.layers.map((layer) => (
-          <LayerErrorBoundary key={layer.id} name={layer.name}>
-            <StageLayer
-              layer={layer}
-              selected={selectedLayerId === layer.id}
-              stageWidth={project.stage.width}
-              stageHeight={project.stage.height}
-              setRef={bindLayerRef}
-              onSelectLayer={onSelectLayer}
-              onUpdateLayer={onUpdateLayer}
-              onDragStart={onDragStart}
-              onDoubleClick={handleDoubleClick}
-              isEditing={layer.id === (editingLayerId ?? '')}
-              onTextChange={onTextChange}
-              onTextCommit={onTextCommit}
-              currentTimeMs={currentTimeMs}
-              durationMs={durationMs}
-            />
-          </LayerErrorBoundary>
-        ))}
+    <VideoAnalyserContext.Provider value={videoAnalysersRef}>
+      <div className="stage-wrap">
+        <div ref={stageElRef} className="stage" style={{ aspectRatio: stageRatio, background: project.stage.backgroundColor }} onPointerDown={() => onSelectLayer('')}>
+          {project.layers.map((layer) => (
+            <LayerErrorBoundary key={layer.id} name={layer.name}>
+              <StageLayer
+                layer={layer}
+                selected={selectedLayerId === layer.id}
+                stageWidth={project.stage.width}
+                stageHeight={project.stage.height}
+                setRef={bindLayerRef}
+                onSelectLayer={onSelectLayer}
+                onUpdateLayer={onUpdateLayer}
+                onDragStart={onDragStart}
+                onDoubleClick={handleDoubleClick}
+                isEditing={layer.id === (editingLayerId ?? '')}
+                isPlaying={isPlaying}
+                onTextChange={onTextChange}
+                onTextCommit={onTextCommit}
+                currentTimeMs={currentTimeMs}
+                durationMs={durationMs}
+              />
+            </LayerErrorBoundary>
+          ))}
+        </div>
       </div>
-    </div>
+    </VideoAnalyserContext.Provider>
   )
 })
 
@@ -132,22 +159,24 @@ type LayerProps = {
   onDragStart?: () => void
   onDoubleClick?: (layerId: string) => void
   isEditing: boolean
+  isPlaying: boolean
   onTextChange?: (layerId: string, text: string) => void
   onTextCommit?: (layerId: string, text: string) => void
   currentTimeMs: number
   durationMs: number
 }
 
-const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stageHeight, setRef, onSelectLayer, onUpdateLayer, onDragStart, onDoubleClick, isEditing, onTextChange, onTextCommit, currentTimeMs, durationMs }: LayerProps) {
+const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stageHeight, setRef, onSelectLayer, onUpdateLayer, onDragStart, onDoubleClick, isEditing, isPlaying, onTextChange, onTextCommit, currentTimeMs, durationMs }: LayerProps) {
   const template = assetRegistry.get(layer.templateId)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const initialTransform = computeLayerTransform(layer, silentAudioFeatures, 0)
   const stageSize = useMemo(() => ({ width: stageWidth, height: stageHeight }), [stageHeight, stageWidth])
   const style = layerHostStyle(layer, initialTransform, stageSize, currentTimeMs, durationMs)
+  const isVideo = layer.templateId === 'video-layer'
   const content = useMemo(
-    () => isEditing ? null : renderLayerContent(layer, currentTimeMs),
+    () => (isEditing || isVideo) ? null : renderLayerContent(layer, currentTimeMs),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layer.id, layer.templateId, layer.settings, layer.settings.color, layer.name, layer.placement.fit, layer.timing, layer.visible, isEditing, currentTimeMs],
+    [layer.id, layer.templateId, layer.settings, layer.settings.color, layer.name, layer.placement.fit, layer.timing, layer.visible, isEditing, currentTimeMs, isVideo],
   )
 
   if (!template) return null
@@ -299,7 +328,12 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
       onPointerDown={onPointerDown}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(layer.id) }}
     >
-      {isEditing ? <TypographyLayerEditing layer={layer} onTextChange={onTextChange} onTextCommit={onTextCommit} /> : content}
+      {isEditing
+        ? <TypographyLayerEditing layer={layer} onTextChange={onTextChange} onTextCommit={onTextCommit} />
+        : isVideo
+          ? <VideoLayerPlayer layer={layer} isPlaying={isPlaying} />
+          : content
+      }
       {!isEditing && (
         <div className="resize-overlay">
           <div className="resize-frame" />
@@ -331,15 +365,109 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
   )
 })
 
+// ── VideoLayerPlayer ─────────────────────────────────────────────────────────
+
+function VideoLayerPlayer({ layer, isPlaying }: { layer: LayerInstance; isPlaying: boolean }) {
+  const src = String(layer.settings.src ?? '')
+  const startMs    = Number(layer.settings.videoStartMs ?? 0)
+  const endMs      = layer.settings.videoEndMs != null ? Number(layer.settings.videoEndMs) : null
+  const rate       = Number(layer.settings.playbackRate ?? 1)
+  const loop       = layer.settings.videoLoop !== false
+  const bassSource = String(layer.settings.bassSource ?? 'main')
+  const muted      = bassSource !== 'video'
+
+  const videoRef     = useRef<HTMLVideoElement>(null)
+  const audioCtxRef  = useRef<AudioContext | null>(null)
+  const capturedRef  = useRef(false)
+  const analysersRef = useContext(VideoAnalyserContext)
+
+  // Sync play / pause with main transport
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !v.src) return
+    if (isPlaying) void v.play().catch(() => {})
+    else v.pause()
+  }, [isPlaying])
+
+  // Playback rate
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.playbackRate = rate
+  }, [rate])
+
+  // End cap — timeupdate resets to start when we pass the out point
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || endMs === null) return
+    const handle = () => {
+      if (v.currentTime >= endMs / 1000) {
+        v.currentTime = startMs / 1000
+        if (!loop) v.pause()
+      }
+    }
+    v.addEventListener('timeupdate', handle)
+    return () => v.removeEventListener('timeupdate', handle)
+  }, [endMs, startMs, loop])
+
+  // Bass FX — create a silent AudioContext tapping this video's audio track
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || bassSource !== 'video' || capturedRef.current) return
+
+    try {
+      const ctx = new AudioContext()
+      audioCtxRef.current = ctx
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 512
+      analyser.smoothingTimeConstant = 0.72
+      // Route through WebAudio but don't connect to destination → silent analysis
+      ctx.createMediaElementSource(v).connect(analyser)
+      const data = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>
+      analysersRef.current.set(layer.id, { analyser, data })
+      capturedRef.current = true
+      void ctx.resume()
+    } catch { /* createMediaElementSource can only be called once per element */ }
+
+    return () => {
+      analysersRef.current.delete(layer.id)
+      if (audioCtxRef.current) {
+        void audioCtxRef.current.close()
+        audioCtxRef.current = null
+      }
+      capturedRef.current = false
+    }
+  }, [bassSource, layer.id, analysersRef])
+
+  if (!src) return <div className="image-placeholder">Upload<br />Video</div>
+
+  return (
+    <video
+      ref={videoRef}
+      className="video-layer"
+      src={src}
+      muted={muted}
+      playsInline
+      loop={loop && endMs === null}
+      onLoadedData={() => {
+        const v = videoRef.current
+        if (!v) return
+        v.currentTime = startMs / 1000
+        v.playbackRate = rate
+        if (isPlaying) void v.play().catch(() => {})
+      }}
+    />
+  )
+}
+
+// ── renderLayerContent ────────────────────────────────────────────────────────
+
 function renderLayerContent(layer: LayerInstance, currentTimeMs: number = 0) {
   const visualKind = resolveVisualKind(layer)
   const color = String(layer.settings.color ?? '#ffffff')
 
   if (layer.templateId === 'photo-cutout') {
     return layer.settings.src ? <img className="image-layer" src={String(layer.settings.src)} alt={layer.name} draggable={false} /> : <div className="image-placeholder">Upload<br />Image</div>
-  }
-  if (layer.templateId === 'video-layer') {
-    return layer.settings.src ? <video className="video-layer" src={String(layer.settings.src)} autoPlay loop muted playsInline /> : <div className="image-placeholder">Upload<br />Video</div>
   }
 
   switch (visualKind) {

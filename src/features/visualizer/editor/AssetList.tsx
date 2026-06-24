@@ -4,7 +4,7 @@ import { assetRegistry } from '../assets/registry'
 import type { AssetControl, AudioTrigger, FitMode, LayerInstance } from '../project/types'
 import { LayerVisibilityStrip } from './LayerVisibilityStrip'
 
-const triggers: AudioTrigger[] = ['none', 'vocals']
+const triggers: AudioTrigger[] = ['none', 'bass', 'beat', 'vocals', 'highs', 'full']
 
 type Props = {
   layers: LayerInstance[]
@@ -18,11 +18,12 @@ type Props = {
   onRemove: (layerId: string) => void
   onReorder: (layers: LayerInstance[]) => void
   onEditSubtitleLayer?: (layerId: string) => void
+  onEditVideoLayer?: (layerId: string) => void
 }
 
 export function AssetList({
   layers, selectedLayerId, durationMs, currentTimeMs, onSelect, onUpdate, onUpdateTransient,
-  onTimingDragStart, onRemove, onReorder, onEditSubtitleLayer,
+  onTimingDragStart, onRemove, onReorder, onEditSubtitleLayer, onEditVideoLayer,
 }: Props) {
   const [settingsLayerId, setSettingsLayerId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -95,6 +96,7 @@ export function AssetList({
         const template = assetRegistry.get(layer.templateId)
         const active = selectedLayerId === layer.id
         const isSubtitle = String(layer.settings.visualKind) === 'subtitle'
+        const isVideo = layer.templateId === 'video-layer'
         const settingsOpen = settingsLayerId === layer.id
         const isDragging = draggingId === layer.id
         const isDragOver = dragOverId === layer.id && draggingId !== layer.id
@@ -156,10 +158,12 @@ export function AssetList({
                 <LayerSettingsPopup
                   layer={layer}
                   isSubtitle={isSubtitle}
+                  isVideo={isVideo}
                   templateControls={template?.controls}
                   onUpdate={(patch) => onUpdate(layer.id, patch)}
                   onRemove={() => { onRemove(layer.id); setSettingsLayerId(null) }}
                   onEditSubtitle={() => { onEditSubtitleLayer?.(layer.id); setSettingsLayerId(null) }}
+                  onEditVideo={() => { onEditVideoLayer?.(layer.id); setSettingsLayerId(null) }}
                 />
               )}
             </div>
@@ -173,14 +177,16 @@ export function AssetList({
 type LayerSettingsPopupProps = {
   layer: LayerInstance
   isSubtitle: boolean
+  isVideo: boolean
   templateControls?: AssetControl[]
   onUpdate: (patch: Partial<LayerInstance>) => void
   onRemove: () => void
   onEditSubtitle: () => void
+  onEditVideo: () => void
 }
 
 function LayerSettingsPopup({
-  layer, isSubtitle, templateControls, onUpdate, onRemove, onEditSubtitle,
+  layer, isSubtitle, isVideo, templateControls, onUpdate, onRemove, onEditSubtitle, onEditVideo,
 }: LayerSettingsPopupProps) {
   const sp = (e: React.MouseEvent) => e.stopPropagation()
 
@@ -189,6 +195,11 @@ function LayerSettingsPopup({
       {isSubtitle && (
         <button type="button" className="lr-settings-link" onClick={onEditSubtitle}>
           Edit subtitles…
+        </button>
+      )}
+      {isVideo && (
+        <button type="button" className="lr-settings-link" onClick={onEditVideo}>
+          Video Settings…
         </button>
       )}
 

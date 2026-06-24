@@ -4,9 +4,11 @@ export class AudioEngine {
   private ctx?: AudioContext
   private analyser?: AnalyserNode
   private source?: MediaElementAudioSourceNode
+  private destNode?: MediaStreamAudioDestinationNode
   private data?: Uint8Array
   private prevBass = 0
   private features: AudioFeatures = silentAudioFeatures
+  private outputConnected = false
 
   connect(audio: HTMLAudioElement) {
     if (this.ctx) return
@@ -18,7 +20,26 @@ export class AudioEngine {
     this.source = this.ctx.createMediaElementSource(audio)
     this.source.connect(this.analyser)
     this.analyser.connect(this.ctx.destination)
+    this.outputConnected = true
+    // Tap audio output for MediaRecorder capture
+    this.destNode = this.ctx.createMediaStreamDestination()
+    this.analyser.connect(this.destNode)
     this.data = new Uint8Array(this.analyser.frequencyBinCount)
+  }
+
+  setOutputMuted(muted: boolean) {
+    if (!this.analyser || !this.ctx) return
+    if (muted && this.outputConnected) {
+      this.analyser.disconnect(this.ctx.destination)
+      this.outputConnected = false
+    } else if (!muted && !this.outputConnected) {
+      this.analyser.connect(this.ctx.destination)
+      this.outputConnected = true
+    }
+  }
+
+  getAudioStream(): MediaStream | undefined {
+    return this.destNode?.stream
   }
 
   async resume() {

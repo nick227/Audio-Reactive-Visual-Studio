@@ -15,4 +15,13 @@ export const STOCK_IMAGES: StockMediaRecord[] = [
 ]
 
 /** Bundled stock videos — add files to public/stock/videos/ and list them here. */
-export const STOCK_VIDEOS: StockMediaRecord[] = []
+export const STOCK_VIDEOS: StockMediaRecord[] = [
+  { id: 'stock-dance', name: 'Dance Girls', url: '/stock/videos/dancing.mp4', fileKey: 'stock:dance' },
+  { id: 'stock-walk', name: 'Nice Walk', url: '/stock/videos/walk.mp4', fileKey: 'stock:walk' },
+  { id: 'stock-dj', name: 'lady dj', url: '/stock/videos/dj-women.mp4', fileKey: 'stock:dj' },
+  { id: 'stock-watches', name: 'Nice watches', url: '/stock/videos/watches.mp4', fileKey: 'stock:watches' },
+  { id: 'stock-face', name: 'Nice face', url: '/stock/videos/face.mp4', fileKey: 'stock:face' },
+  { id: 'stock-streets', name: 'Nice streets', url: '/stock/videos/streets.mp4', fileKey: 'stock:streets' },
+  { id: 'stock-art', name: 'Nice art', url: '/stock/videos/art.mp4', fileKey: 'stock:art' },
+  { id: 'stock-djman', name: 'Nice Walk', url: '/stock/videos/dj-man.mp4', fileKey: 'stock:djman' },
+]

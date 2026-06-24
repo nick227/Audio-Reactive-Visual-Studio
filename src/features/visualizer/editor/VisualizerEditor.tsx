@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Clapperboard, Captions, FilePlus, Image, Monitor, Pause, Play, Plus, Smartphone, Upload } from 'lucide-react'
+import { flushSync } from 'react-dom'
+import { Clapperboard, Captions, Download, Loader2, Maximize2, Minimize2, Monitor, Pause, Play, Plus, Smartphone, Upload, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import { AudioEngine } from '../audio/AudioEngine'
 import { buildWaveformPeaks } from '../audio/waveform'
@@ -17,7 +18,10 @@ import { AssetList } from './AssetList'
 import { MediaModal } from './MediaModal'
 import { SubtitleModal } from './SubtitleModal'
 import { ExportPanel } from './ExportPanel'
+import { exportFileBase, suggestExportTitle } from '../export/exportTitle'
+import { VideoSettingsModal } from './VideoSettingsModal'
 import { idbPut, idbGet, idbDelete } from '../storage/idbStorage'
+import { SiteTopBar } from '../../../components/SiteTopBar'
 
 const UI_FRAME_INTERVAL_MS = 100
 const MAX_HISTORY = 50
@@ -51,6 +55,10 @@ function applyLayerPatch(layers: LayerInstance[], layerId: string, patch: Partia
   )
 }
 
+function cloneProject(p: Project): Project {
+  return structuredClone(p)
+}
+
 export function VisualizerEditor() {
   const [history, setHistory] = useState<HistoryState>(() => ({
     past: [],
@@ -71,7 +79,13 @@ export function VisualizerEditor() {
   const [isExportingVideo, setIsExportingVideo] = useState(false)
   const [exportVideoProgress, setExportVideoProgress] = useState(0)
   const [exportOpen, setExportOpen] = useState(false)
+  const [exportSnapshot, setExportSnapshot] = useState<Project | null>(null)
+  const stageProject = exportSnapshot ?? project
   const [subtitleOpen, setSubtitleOpen] = useState(false)
+  const [videoSettingsLayerId, setVideoSettingsLayerId] = useState<string | null>(null)
+  const [isFullScreen, setIsFullScreen] = useState(false)
+  const [fsUiIdle, setFsUiIdle] = useState(false)
+  const fsIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [editingSubtitleLayerId, setEditingSubtitleLayerId] = useState<string | null>(null)
   const [currentTimeMs, setCurrentTimeMs] = useState(0)
   const playbackTimeMsRef = useRef(0)
@@ -96,6 +110,10 @@ export function VisualizerEditor() {
 
   const activeStagePreset = useMemo(() => stagePresets.find((p) => p.width === project.stage.width && p.height === project.stage.height)?.id ?? 'desktop', [project.stage.height, project.stage.width])
   const hasAudio = Boolean(project.audio?.url)
+  const suggestedExportTitle = useMemo(
+    () => suggestExportTitle(project.audio?.filename, project.name),
+    [project.audio?.filename, project.name],
+  )
 
   // If the selected layer was removed by undo/redo, fall back to the topmost layer.
   useEffect(() => {
@@ -160,6 +178,12 @@ export function VisualizerEditor() {
     })
   }, [])
 
+  const persistExportTitle = useCallback((title: string) => {
+    const name = title.trim() || suggestedExportTitle
+    if (name === project.name) return
+    commitProject((p) => ({ ...p, name }))
+  }, [commitProject, project.name, suggestedExportTitle])
+
   const togglePlaybackRef = useRef<() => void>(() => {})
 
   // ── Text editing ─────────────────────────────────────────────────────────────
@@ -196,6 +220,31 @@ export function VisualizerEditor() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [undo, redo])
+
+  // ── Full-screen idle ─────────────────────────────────────────────────────────
+
+  const resetFsIdleTimer = useCallback(() => {
+    setFsUiIdle(false)
+    if (fsIdleTimerRef.current) clearTimeout(fsIdleTimerRef.current)
+    fsIdleTimerRef.current = setTimeout(() => setFsUiIdle(true), 2500)
+  }, [])
+
+  useEffect(() => {
+    if (isFullScreen) {
+      resetFsIdleTimer()
+      return () => { if (fsIdleTimerRef.current) clearTimeout(fsIdleTimerRef.current) }
+    } else {
+      if (fsIdleTimerRef.current) clearTimeout(fsIdleTimerRef.current)
+      setFsUiIdle(false)
+    }
+  }, [isFullScreen, resetFsIdleTimer])
+
+  useEffect(() => {
+    if (!isFullScreen) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsFullScreen(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [isFullScreen])
 
   // ── Persistence ─────────────────────────────────────────────────────────────
 
@@ -434,10 +483,11 @@ export function VisualizerEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.audio?.fileKey, project.layers])
 
-  const exportPng = useCallback(async () => {
+  const exportPng = useCallback(async (title: string) => {
     const stageEl = stageRef.current?.getStageElement()
     const audio = audioRef.current
     if (!stageEl) return
+    persistExportTitle(title)
     setIsExporting(true)
     try {
       const ms = (audio?.currentTime ?? 0) * 1000
@@ -447,12 +497,12 @@ export function VisualizerEditor() {
       const url = canvas.toDataURL('image/png')
       const a = document.createElement('a')
       a.href = url
-      a.download = `${project.name.replace(/\s+/g, '-').toLowerCase()}.png`
+      a.download = `${exportFileBase(title.trim() || suggestedExportTitle)}.png`
       a.click()
     } finally {
       setIsExporting(false)
     }
-  }, [project.name, project.stage.width, syncStageFrame])
+  }, [persistExportTitle, project.stage.width, suggestedExportTitle, syncStageFrame])
 
   // ── Audio ────────────────────────────────────────────────────────────────────
 
@@ -545,11 +595,16 @@ export function VisualizerEditor() {
     syncStageFrame(ms)
   }
 
-  const exportWebm = useCallback(async () => {
+  const exportWebm = useCallback(async (snapshot: Project) => {
     const audio = audioRef.current
     const stageEl = stageRef.current?.getStageElement()
-    if (!audio || !stageEl || !project.audio?.duration) return
-    const duration = project.audio.duration
+    if (!audio || !stageEl || !snapshot.audio?.duration) return
+    const duration = snapshot.audio.duration
+
+    flushSync(() => {
+      setExportSnapshot(snapshot)
+      setExportOpen(true)
+    })
 
     const displayW = stageEl.offsetWidth
     const displayH = stageEl.offsetHeight
@@ -558,12 +613,27 @@ export function VisualizerEditor() {
     outputCanvas.height = displayH
     const ctx = outputCanvas.getContext('2d')!
 
-    const mimeType = (['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'] as const).find(
-      (t) => MediaRecorder.isTypeSupported(t)
-    ) ?? 'video/webm'
+    // Include opus so MediaRecorder can mux the audio track alongside video.
+    const mimeType = (
+      ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] as const
+    ).find((t) => MediaRecorder.isTypeSupported(t)) ?? 'video/webm'
 
-    const stream = outputCanvas.captureStream(15)
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_500_000 })
+    // Init engine before building the stream so we can tap the audio output.
+    audio.currentTime = 0
+    audio.muted = true
+    engineRef.current ??= new AudioEngine()
+    engineRef.current.connect(audio)
+    await engineRef.current.resume()
+    engineRef.current.setOutputMuted(true)
+
+    // Merge canvas video tracks with live audio tracks from the WebAudio graph.
+    const videoTracks = outputCanvas.captureStream(30).getTracks()
+    const audioStream = engineRef.current.getAudioStream()
+    const recordStream = audioStream
+      ? new MediaStream([...videoTracks, ...audioStream.getTracks()])
+      : new MediaStream(videoTracks)
+
+    const recorder = new MediaRecorder(recordStream, { mimeType, videoBitsPerSecond: 5_000_000 })
     const chunks: Blob[] = []
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
 
@@ -572,48 +642,59 @@ export function VisualizerEditor() {
     setIsExportingVideo(true)
     setExportVideoProgress(0)
 
-    audio.currentTime = 0
-    engineRef.current ??= new AudioEngine()
-    engineRef.current.connect(audio)
-    await engineRef.current.resume()
+    try {
+      recorder.start(250)
+      await audio.play()
+      setIsPlaying(true)
+      rafRef.current = requestAnimationFrame(tickRef.current)
 
-    recorder.start(250)
-    await audio.play()
-    setIsPlaying(true)
-    rafRef.current = requestAnimationFrame(tickRef.current)
+      // Render frames into the output canvas. captureStream samples at 30fps.
+      while (!exportCancelRef.current && !audio.ended && audio.currentTime < duration) {
+        try {
+          const frameMs = audio.currentTime * 1000
+          setCurrentTimeMs(frameMs)
+          syncStageFrame(frameMs)
+          const frame = await html2canvas(stageEl, { scale: 1, useCORS: true, allowTaint: true, logging: false })
+          ctx.drawImage(frame, 0, 0, displayW, displayH)
+        } catch { /* skip frame */ }
+        setExportVideoProgress(Math.min(audio.currentTime / duration, 1))
+        // Yield so cancel button clicks and React state flush.
+        await new Promise<void>((r) => setTimeout(r, 0))
+      }
 
-    // Draw html2canvas frames to the output canvas as fast as the browser allows.
-    // captureStream samples the canvas at 15fps regardless of our frame rate.
-    while (!exportCancelRef.current && !audio.ended && audio.currentTime < duration) {
-      try {
-        const frameMs = audio.currentTime * 1000
-        syncStageFrame(frameMs)
-        const frame = await html2canvas(stageEl, { scale: 1, useCORS: true, allowTaint: true, logging: false })
-        ctx.drawImage(frame, 0, 0, displayW, displayH)
-      } catch { /* skip frame */ }
-      setExportVideoProgress(Math.min(audio.currentTime / duration, 1))
-      // Yield to the event loop so cancel button clicks and React state flush.
-      await new Promise<void>((r) => setTimeout(r, 0))
+      stopPlayback()
+      // Register onstop before calling stop() so the event is never missed.
+      await new Promise<void>((r) => {
+        recorder.addEventListener('stop', () => r(), { once: true })
+        recorder.stop()
+      })
+
+      if (!exportCancelRef.current && chunks.length > 0) {
+        const blob = new Blob(chunks, { type: mimeType })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${exportFileBase(snapshot.name)}.webm`
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 30_000)
+      }
+    } finally {
+      audio.muted = false
+      engineRef.current?.setOutputMuted(false)
+      exportActiveRef.current = false
+      setExportSnapshot(null)
+      setIsExportingVideo(false)
+      setExportVideoProgress(0)
     }
+  }, [stopPlayback, syncStageFrame])
 
-    stopPlayback()
-    exportActiveRef.current = false
-    recorder.stop()
-    await new Promise<void>((r) => { recorder.onstop = () => r() })
-
-    if (!exportCancelRef.current && chunks.length > 0) {
-      const blob = new Blob(chunks, { type: mimeType })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${project.name.replace(/\s+/g, '-').toLowerCase()}-preview.webm`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(url), 30_000)
-    }
-
-    setIsExportingVideo(false)
-    setExportVideoProgress(0)
-  }, [project.audio?.duration, project.name, stopPlayback, syncStageFrame])
+  const beginExportWebm = useCallback((title: string) => {
+    const name = title.trim() || suggestedExportTitle
+    persistExportTitle(title)
+    const snapshot = cloneProject(project)
+    snapshot.name = name
+    void exportWebm(snapshot)
+  }, [exportWebm, persistExportTitle, project, suggestedExportTitle])
 
   // ── Stage preset ─────────────────────────────────────────────────────────────
 
@@ -629,10 +710,15 @@ export function VisualizerEditor() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell${isFullScreen ? ' full-screen' : ''}${isFullScreen && fsUiIdle ? ' fs-ui-idle' : ''}`}
+      onPointerMove={isFullScreen ? resetFsIdleTimer : undefined}
+    >
       <audio ref={audioRef} onEnded={() => { setIsPlaying(false); setProgress(1) }} />
 
-      <div className="editor-body">
+      {!isFullScreen && <SiteTopBar />}
+
+      <div className={`editor-body ${activeStagePreset}-screen${isFullScreen ? ' full-screen' : ''}`}>
 
         {/* ── Stage ── */}
         <div className="stage-area">
@@ -647,12 +733,16 @@ export function VisualizerEditor() {
                 )
               })}
             </div>
+            <button className="fs-toggle-btn" onClick={() => setIsFullScreen((v) => !v)} title={isFullScreen ? 'Exit full screen (Esc)' : 'Full screen'}>
+              {isFullScreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
           </div>
           <div className="stage-viewport">
             <Stage
               ref={stageRef}
-              project={project}
+              project={stageProject}
               selectedLayerId={selectedLayerId}
+              isPlaying={isPlaying}
               onSelectLayer={(id) => {
                 setSelectedLayerId(id)
                 if (id !== textEditLayerIdRef.current) setTextEditLayerId(null)
@@ -684,29 +774,41 @@ export function VisualizerEditor() {
         </div>
 
         {/* ── Layers ── */}
-        <AssetList
-          layers={project.layers}
-          selectedLayerId={selectedLayerId}
-          durationMs={(project.audio?.duration ?? 0) * 1000}
-          currentTimeMs={currentTimeMs}
-          onSelect={setSelectedLayerId}
-          onUpdate={updateLayer}
-          onUpdateTransient={updateLayerTransient}
-          onTimingDragStart={snapshotForDrag}
-          onRemove={removeLayer}
-          onReorder={reorderLayers}
-          onEditSubtitleLayer={editSubtitleLayer}
-        />
+        {!isFullScreen && (
+          <>
+            <AssetList
+              layers={project.layers}
+              selectedLayerId={selectedLayerId}
+              durationMs={(project.audio?.duration ?? 0) * 1000}
+              currentTimeMs={currentTimeMs}
+              onSelect={setSelectedLayerId}
+              onUpdate={updateLayer}
+              onUpdateTransient={updateLayerTransient}
+              onTimingDragStart={snapshotForDrag}
+              onRemove={removeLayer}
+              onReorder={reorderLayers}
+              onEditSubtitleLayer={editSubtitleLayer}
+              onEditVideoLayer={setVideoSettingsLayerId}
+            />
 
-        {/* ── Layer list header ── */}
-        <div className="layers-header">
-          <button className="layers-add-btn" onClick={() => setMediaOpen(true)}>
-            <Plus size={13} /> Add Layer
-          </button>
-          <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => openSubtitleModal()}>
-            <Captions size={13} /> Add Subtitles
-          </button>
-        </div>
+            {/* ── Layer list header ── */}
+            <div className="layers-header">
+              <DownloadMediaButton
+                hasAudio={hasAudio}
+                isExportingVideo={isExportingVideo}
+                progress={exportVideoProgress}
+                onStart={() => setExportOpen(true)}
+                onCancel={() => { exportCancelRef.current = true }}
+              />
+              <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => openSubtitleModal()}>
+                <Captions size={13} /> Add Subtitles
+              </button>
+              <button className="layers-add-btn" onClick={() => setMediaOpen(true)}>
+                <Plus size={13} /> Add Layer
+              </button>
+            </div>
+          </>
+        )}
 
       </div>
 
@@ -739,19 +841,70 @@ export function VisualizerEditor() {
         )
       })()}
 
+      {videoSettingsLayerId && (() => {
+        const vLayer = project.layers.find((l) => l.id === videoSettingsLayerId) ?? null
+        if (!vLayer) return null
+        return (
+          <VideoSettingsModal
+            layer={vLayer}
+            onClose={() => setVideoSettingsLayerId(null)}
+            onUpdate={(patch) => updateLayer(videoSettingsLayerId, patch)}
+          />
+        )
+      })()}
+
       {exportOpen && (
         <ExportPanel
           hasAudio={hasAudio}
+          suggestedTitle={suggestedExportTitle}
           isExportingPng={isExporting}
           isExportingVideo={isExportingVideo}
           videoProgress={exportVideoProgress}
-          onExportPng={() => void exportPng()}
-          onExportWebm={() => void exportWebm()}
+          onExportPng={(title) => void exportPng(title)}
+          onExportWebm={beginExportWebm}
           onCancelVideo={() => { exportCancelRef.current = true }}
-          onClose={() => setExportOpen(false)}
+          onClose={() => {
+            if (isExportingVideo) return
+            setExportOpen(false)
+          }}
         />
       )}
     </div>
+  )
+}
+
+type DownloadMediaButtonProps = {
+  hasAudio: boolean
+  isExportingVideo: boolean
+  progress: number
+  onStart: () => void
+  onCancel: () => void
+}
+
+function DownloadMediaButton({ hasAudio, isExportingVideo, progress, onStart, onCancel }: DownloadMediaButtonProps) {
+  const pct = Math.round(progress * 100)
+
+  if (isExportingVideo) {
+    return (
+      <button className="dl-media-btn dl-media-btn--exporting" onClick={onCancel} title="Click to cancel">
+        <div className="dl-media-fill" style={{ width: `${pct}%` }} />
+        <Loader2 size={12} className="dl-media-spinner" />
+        <span className="dl-media-label">Compiling… {pct}%</span>
+        <X size={11} className="dl-media-cancel-icon" />
+      </button>
+    )
+  }
+
+  return (
+    <button
+      className="dl-media-btn"
+      onClick={onStart}
+      disabled={!hasAudio}
+      title={hasAudio ? 'Download canvas + audio as WebM' : 'Add audio first'}
+    >
+      <Download size={12} />
+      <span className="dl-media-label">Download Media</span>
+    </button>
   )
 }
 

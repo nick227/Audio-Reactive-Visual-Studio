@@ -4,7 +4,7 @@ export type AudioTrigger = 'none' | 'bass' | 'beat' | 'vocals' | 'highs' | 'full
 export type ExtraEffect = 'none' | 'float' | 'rotate' | 'drift' | 'shake' | 'glow' | 'flicker' | 'particles'
 export type SubtitleStyle = 'cinematic' | 'pop' | 'karaoke' | 'retro' | 'minimal'
 export type FitMode = 'contain' | 'cover' | 'original' | 'stretch' | 'custom'
-export type StagePresetId = 'mobile' | 'desktop' | 'film'
+export type StagePresetId = 'mobile' | 'desktop' | 'film' | 'full-screen'
 export type AssetCategory =
   | 'images-cutouts'
   | 'textures'
