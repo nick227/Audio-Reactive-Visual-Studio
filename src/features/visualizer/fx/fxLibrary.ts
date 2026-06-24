@@ -38,6 +38,21 @@ export const puppetItems: FxItem[] = communityAssets
   .filter((asset) => asset.category === 'puppets')
   .map(assetToFxItem)
 
+export type LayerTypeFilter = 'all' | 'uploads' | 'text' | AssetCollection
+
+export const LAYER_TYPE_FILTERS: { id: LayerTypeFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'uploads', label: 'Uploads' },
+  { id: 'text', label: 'Text' },
+  ...COMMUNITY_SECTIONS.map(({ collection, label }) => ({ id: collection, label })),
+]
+
+export function filterByLayerType(items: FxItem[], filter: LayerTypeFilter): FxItem[] {
+  if (filter === 'all' || filter === 'uploads') return items
+  if (filter === 'text') return items.filter((item) => item.category === 'typography')
+  return items.filter((item) => item.collection === filter)
+}
+
 export function filterFxItems(items: FxItem[], query: string): FxItem[] {
   if (!query.trim()) return items
   const q = query.trim().toLowerCase()

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Search, Upload, X } from 'lucide-react'
-import { getLayerCatalogItems, type FxItem } from '../fx/fxLibrary'
+import { getLayerCatalogItems, filterByLayerType, LAYER_TYPE_FILTERS, type FxItem, type LayerTypeFilter } from '../fx/fxLibrary'
 import { PuppetThumbnail } from './PuppetThumbnail'
 
 export type UploadRecord = { id: string; name: string; url: string; fileKey: string }
@@ -23,18 +23,23 @@ export function MediaModal({
   uploadedImages, uploadedVideos, onReuseImage, onReuseVideo,
 }: Props) {
   const [query, setQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState<LayerTypeFilter>('all')
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const catalogItems = useMemo(() => getLayerCatalogItems(query), [query])
+  const catalogItems = useMemo(
+    () => filterByLayerType(getLayerCatalogItems(query), typeFilter),
+    [query, typeFilter],
+  )
 
   const userMedia = useMemo((): UserMediaItem[] => {
+    if (typeFilter !== 'all' && typeFilter !== 'uploads') return []
     const q = query.trim().toLowerCase()
     const items: UserMediaItem[] = [
       ...uploadedImages.map((item) => ({ ...item, kind: 'image' as const })),
       ...uploadedVideos.map((item) => ({ ...item, kind: 'video' as const })),
     ]
     return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
-  }, [query, uploadedImages, uploadedVideos])
+  }, [query, typeFilter, uploadedImages, uploadedVideos])
 
   const hasResults = userMedia.length > 0 || catalogItems.length > 0
 
@@ -81,6 +86,21 @@ export function MediaModal({
           </button>
         </header>
 
+        <div className="layer-browser-chips fx-tab-strip" role="tablist" aria-label="Filter layers by type">
+          {LAYER_TYPE_FILTERS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={typeFilter === id}
+              className={typeFilter === id ? 'active' : ''}
+              onClick={() => setTypeFilter(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="media-body layer-browser-body">
           {hasResults ? (
             <div className="layer-browser-grid">
@@ -118,7 +138,11 @@ export function MediaModal({
               ))}
             </div>
           ) : (
-            <div className="media-empty-state">No layers match this search.</div>
+            <div className="media-empty-state">
+              {typeFilter === 'uploads' && !query.trim()
+                ? 'No uploads yet — use Upload to add images or video.'
+                : 'No layers match this filter.'}
+            </div>
           )}
         </div>
       </div>

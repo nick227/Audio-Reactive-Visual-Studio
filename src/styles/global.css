@@ -16,7 +16,7 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 
 /* ── Shell ───────────────────────────────────────────────────────────────── */
 .app-shell { min-height: 100vh; }
-.editor-body { max-width: 860px; margin: 0 auto; padding: 14px 14px 40px; display: grid; gap: 8px; }
+.editor-body { margin: 0 auto; padding: 14px 14px 40px; display: grid; gap: 8px; }
 
 /* ── Stage ───────────────────────────────────────────────────────────────── */
 .stage-area { display: flex; flex-direction: column; gap: 6px; }
@@ -472,6 +472,70 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
   .layer-name { max-width: 90px; }
 }
 
+/* ── Full-screen view button ─────────────────────────────────────────────── */
+.fs-toggle-btn {
+  width: 28px; height: 26px; border-radius: 7px;
+  display: grid; place-items: center;
+  background: transparent; color: rgba(255,255,255,.42);
+  margin-left: auto;
+}
+.fs-toggle-btn:hover { color: rgba(255,255,255,.82); background: rgba(255,255,255,.08); }
+
+/* ── Full-screen mode ────────────────────────────────────────────────────── */
+.app-shell.full-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #09090d;
+  overflow: hidden;
+}
+.app-shell.full-screen .editor-body {
+  position: relative;
+  max-width: 100%;
+  height: 100%;
+  padding: 0;
+  display: block;
+}
+.app-shell.full-screen .stage-area {
+  position: absolute;
+  inset: 0;
+  gap: 0;
+}
+.app-shell.full-screen .stage-controls {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 10;
+  height: auto;
+  padding: 12px 16px;
+  background: linear-gradient(to bottom, rgba(0,0,0,.6) 0%, transparent 100%);
+  transition: opacity 400ms ease;
+}
+.app-shell.full-screen .stage-viewport {
+  position: absolute;
+  inset: 0;
+  height: auto;
+}
+.app-shell.full-screen .stage {
+  border-radius: 0;
+  border: none;
+  max-width: 100vw;
+  max-height: 100vh;
+}
+.app-shell.full-screen .transport {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  z-index: 10;
+  padding: 24px 16px 20px;
+  margin: 0;
+  background: linear-gradient(to top, rgba(0,0,0,.6) 0%, transparent 100%);
+  transition: opacity 400ms ease;
+}
+.app-shell.full-screen.fs-ui-idle .stage-controls,
+.app-shell.full-screen.fs-ui-idle .transport {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ── Major content pack: generic studio asset renderers ───────────────────── */
 .studio-gradient { background: radial-gradient(circle at 18% 12%, var(--a), transparent 36%), radial-gradient(circle at 84% 16%, var(--b), transparent 34%), radial-gradient(circle at 52% 88%, var(--c), transparent 46%), linear-gradient(135deg, color-mix(in srgb, var(--a) 18%, #09090d), color-mix(in srgb, var(--b) 16%, #111119)); filter: saturate(1.24) contrast(1.04); animation: studio-drift 10s ease-in-out infinite alternate; }
 @keyframes studio-drift { from { background-position: 0 0, 0 0, 0 0, 0 0; } to { background-position: 6% -4%, -5% 3%, 3% 8%, 0 0; } }
@@ -673,6 +737,11 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
   background: #f2f0ff; border: 0; transition: background 120ms;
 }
 .layer-browser-upload-btn:hover { background: #fff; }
+.layer-browser-chips {
+  flex-shrink: 0;
+  padding: 0 14px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
 .fx-browser-tools { display: flex; gap: 12px; align-items: center; padding: 14px 18px; flex-shrink: 0; }
 .fx-browser-tools .fx-search { flex: 1; }
 .fx-search { flex: 1; min-width: 240px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 12px 14px; background: rgba(255,255,255,.065); color: #bdbbd0; }
@@ -751,6 +820,57 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
   .layer-browser-header .layer-browser-upload-btn { grid-column: 1 / -1; justify-content: center; }
   .fx-library-hero { grid-template-columns: 1fr; }
 }
+
+/* ── Download Media button ───────────────────────────────────────────────── */
+.dl-media-btn {
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 12px; border-radius: 7px;
+  background: rgba(255,255,255,.07); color: rgba(255,255,255,.65);
+  font-size: 12px; font-weight: 600;
+  border: 1px solid transparent;
+  transition: background 120ms, border-color 120ms, color 120ms;
+  white-space: nowrap; flex-shrink: 0;
+}
+.dl-media-btn:hover:not(:disabled):not(.dl-media-btn--exporting) {
+  background: rgba(255,255,255,.12); color: #fff;
+}
+.dl-media-btn:disabled {
+  opacity: .32; cursor: not-allowed;
+}
+.dl-media-btn--exporting {
+  background: rgba(120,88,255,.15);
+  border-color: rgba(120,88,255,.3);
+  color: rgba(255,255,255,.75);
+  cursor: pointer;
+  min-width: 160px;
+}
+.dl-media-btn--exporting:hover {
+  background: rgba(200,60,60,.18);
+  border-color: rgba(200,60,60,.3);
+  color: #ff9898;
+}
+.dl-media-fill {
+  position: absolute; inset: 0; right: auto;
+  background: rgba(120,88,255,.35);
+  transition: width 500ms linear;
+  z-index: 0; pointer-events: none;
+}
+.dl-media-spinner {
+  position: relative; z-index: 1; flex-shrink: 0;
+  animation: dl-spin 1s linear infinite;
+  color: #c4b0ff;
+}
+@keyframes dl-spin { to { transform: rotate(360deg); } }
+.dl-media-label { position: relative; z-index: 1; }
+.dl-media-cancel-icon {
+  position: relative; z-index: 1; margin-left: 2px; flex-shrink: 0;
+  color: rgba(255,120,120,.6);
+}
+.dl-media-btn--exporting:hover .dl-media-cancel-icon { color: #ff6666; }
+
+/* progress pct label in export panel */
+.export-progress-pct { font-weight: 700; color: rgba(255,255,255,.65); min-width: 30px; }
 
 /* ── Add Subtitles button ─────────────────────────────────────────────────── */
 .layers-add-subtitle-btn {
@@ -1104,9 +1224,8 @@ input[type="range"] { accent-color: #f2f0ff; cursor: pointer; }
 
 /* ── Modal summary pill ───────────────────────────────────────────────────── */
 .srt-modal-summary {
-  font-size: 11px; color: rgba(255,255,255,.38);
+  font-size: 11px; color: rgba(255,255,255,.8);
   padding: 3px 8px; border-radius: 99px;
-  background: rgba(255,255,255,.06);
   white-space: nowrap; margin: 0 auto;
 }
 
