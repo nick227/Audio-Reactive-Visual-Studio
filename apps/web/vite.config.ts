@@ -12,6 +12,8 @@ const isolationHeaders = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 }
 
+const allowedHosts = ['music-visualizer.up.railway.app']
+
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -19,13 +21,17 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
   } satisfies UserConfig['test'],
   server: {
+    host: '0.0.0.0',
     port: 5173,
     strictPort: true,
+    allowedHosts,
     headers: isolationHeaders,
   },
   preview: {
+    host: '0.0.0.0',
     port: 4173,
     strictPort: true,
+    allowedHosts,
     headers: isolationHeaders,
   },
 })
