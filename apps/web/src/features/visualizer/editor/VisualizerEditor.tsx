@@ -22,7 +22,7 @@ import { SubtitleModal } from './SubtitleModal'
 import { ExportPanel } from './ExportPanel'
 import { exportFileBase, suggestExportTitle } from '../export/exportTitle'
 import { WEBCODECS_SUPPORTED, AUDIO_ENCODER_SUPPORTED, exportVideoWebCodecs, type FrameStats, type WebCodecsExportPhase } from '../export/webcodecs'
-import { computeOutputSize, type ExportPreset } from '../export/presets'
+import { computeOutputSize, DEFAULT_PRESET_ID, getPreset, type ExportPreset, type PresetId } from '../export/presets'
 import { prepareExport, ExportValidationError } from '../export/prepare'
 import type { ExportRenderContext } from '../export/prepare'
 import {
@@ -35,6 +35,19 @@ import {
 import { VideoSettingsModal } from './VideoSettingsModal'
 import { idbPut, idbGet, idbDelete } from '../storage/idbStorage'
 import { SiteTopBar } from '../../../components/SiteTopBar'
+import {
+  FrameChunkCache,
+  buildChunkFingerprintMap,
+  buildPrerenderChunks,
+  chunkFrameRange,
+  chunkIndexAtTime,
+  detectDirtyChunkIndexes,
+  frameTimeMs,
+  prioritizeDirtyChunks,
+  scheduleIdleTask,
+  type CachedChunkStats,
+  type RenderChunkIdentity,
+} from '../prerender'
 
 const UI_FRAME_INTERVAL_MS = 100
 const MAX_HISTORY = 50
@@ -70,6 +83,22 @@ function applyLayerPatch(layers: LayerInstance[], layerId: string, patch: Partia
 
 function cloneProject(p: Project): Project {
   return structuredClone(p)
+}
+
+function waitForPrerenderIdle(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new DOMException('Prerender cancelled', 'AbortError'))
+  return new Promise<void>((resolve, reject) => {
+    let cancelIdle: (() => void) | null = null
+    const onAbort = () => {
+      cancelIdle?.()
+      reject(new DOMException('Prerender cancelled', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    cancelIdle = scheduleIdleTask(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    })
+  })
 }
 
 export function VisualizerEditor() {
@@ -181,6 +210,20 @@ export function VisualizerEditor() {
 
   // Per-frame encode stats: updated during video export for ETA display.
   const [exportStats, setExportStats] = useState<FrameStats | null>(null)
+  const [preferredExportPresetId, setPreferredExportPresetId] = useState<PresetId>(() => {
+    const stored = localStorage.getItem('avl-export-preset-id')
+    return (stored === 'draft' || stored === 'standard' || stored === 'high' || stored === 'smooth')
+      ? stored
+      : DEFAULT_PRESET_ID
+  })
+  const [prerenderStats, setPrerenderStats] = useState<CachedChunkStats>({
+    preparedChunks: 0,
+    totalChunks: 0,
+    cachedFrames: 0,
+  })
+  const prerenderCacheRef = useRef(new FrameChunkCache(8, 360))
+  const prerenderFingerprintsRef = useRef<Map<number, RenderChunkIdentity> | null>(null)
+  const prerenderRevisionRef = useRef(0)
 
   // Renderer diagnostics: computed from current project layers (both for ExportPanel display
   // and to derive rendererMode without a redundant second pass).
@@ -189,6 +232,128 @@ export function VisualizerEditor() {
     [project.layers],
   )
   const rendererMode = rendererDiagnostics.mode
+  const hasAudio = Boolean(project.audio?.url)
+
+  const updatePrerenderStats = useCallback((totalChunks: number, identities?: Iterable<RenderChunkIdentity>) => {
+    setPrerenderStats(prerenderCacheRef.current.stats(totalChunks, identities))
+  }, [])
+
+  useEffect(() => {
+    const durationMs = (project.audio?.duration ?? 0) * 1000
+    if (!hasAudio || durationMs <= 0 || rendererDiagnostics.mode !== 'native' || isPreparing || isExportingVideo) {
+      prerenderFingerprintsRef.current = null
+      updatePrerenderStats(0)
+      return
+    }
+
+    if (typeof createImageBitmap === 'undefined') {
+      updatePrerenderStats(0)
+      return
+    }
+
+    const stageEl = stageRef.current?.getStageElement()
+    if (!stageEl) return
+
+    const revision = ++prerenderRevisionRef.current
+    const abort = new AbortController()
+    const debounce = window.setTimeout(() => {
+      void (async () => {
+        const snapshot = cloneProject(project)
+        const preset = getPreset(preferredExportPresetId)
+        const displayW = stageEl.offsetWidth
+        const displayH = stageEl.offsetHeight
+        const { w: outputW, h: outputH } = computeOutputSize(displayW, displayH, preset)
+        const chunks = buildPrerenderChunks(durationMs)
+        const identities = buildChunkFingerprintMap(snapshot, chunks, preset, outputW, outputH)
+        const dirty = detectDirtyChunkIndexes(prerenderFingerprintsRef.current, identities)
+        const validKeys = new Set(Array.from(identities.values(), (identity) => identity.key))
+        prerenderCacheRef.current.invalidateMissing(validKeys)
+
+        for (const [index, identity] of identities) {
+          if (!prerenderCacheRef.current.isChunkPrepared(identity)) dirty.add(index)
+        }
+
+        prerenderFingerprintsRef.current = identities
+        updatePrerenderStats(chunks.length, identities.values())
+
+        if (dirty.size === 0) return
+
+        const outputCanvas = document.createElement('canvas')
+        outputCanvas.width = outputW
+        outputCanvas.height = outputH
+        const ctx = outputCanvas.getContext('2d')
+        if (!ctx) return
+
+        const videoEls = createExportVideoElements(snapshot.layers)
+        let manifest: Awaited<ReturnType<typeof prepareExport>> | null = null
+        try {
+          manifest = await prepareExport({
+            snapshot,
+            preset,
+            outputWidth: outputW,
+            outputHeight: outputH,
+            sourceDisplayWidth: displayW,
+            sourceDisplayHeight: displayH,
+            signal: abort.signal,
+            rehearseCompat: async () => {},
+            rehearseNative: async (timeMs: number, renderCtx: ExportRenderContext) => {
+              await renderCanvasFrame(ctx, snapshot, renderCtx, videoEls, timeMs)
+            },
+            onProgress: () => {},
+          })
+
+          if (!manifest.nativeRenderer || abort.signal.aborted || revision !== prerenderRevisionRef.current) return
+
+          const queue = prioritizeDirtyChunks(chunks, dirty, playbackTimeMsRef.current, durationMs).slice(0, 8)
+          for (const item of queue) {
+            if (abort.signal.aborted || revision !== prerenderRevisionRef.current) return
+            const identity = identities.get(item.chunk.index)
+            if (!identity || prerenderCacheRef.current.isChunkPrepared(identity)) continue
+
+            await waitForPrerenderIdle(abort.signal)
+            const { startFrame, endFrame } = chunkFrameRange(item.chunk, preset.fps, durationMs)
+            const totalFrames = Math.max(0, endFrame - startFrame)
+
+            for (let frameIndex = startFrame; frameIndex < endFrame; frameIndex++) {
+              if (abort.signal.aborted || revision !== prerenderRevisionRef.current) return
+              await renderCanvasFrame(ctx, snapshot, manifest, videoEls, frameTimeMs(frameIndex, preset.fps))
+              const frame = await createImageBitmap(outputCanvas)
+              prerenderCacheRef.current.putFrame(identity, item.chunk, frameIndex, totalFrames, frame)
+
+              if (frameIndex % 8 === 7) {
+                await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+              }
+            }
+
+            updatePrerenderStats(chunks.length, identities.values())
+          }
+        } catch (e) {
+          if (!(e instanceof DOMException && e.name === 'AbortError')) {
+            console.warn('[AVL Prerender] background prerender skipped', e)
+          }
+        } finally {
+          if (manifest) {
+            for (const layer of manifest.layers) layer.bitmap?.close()
+          }
+          disposeExportVideoElements(videoEls)
+          updatePrerenderStats(chunks.length, identities.values())
+        }
+      })()
+    }, 800)
+
+    return () => {
+      window.clearTimeout(debounce)
+      abort.abort()
+    }
+  }, [
+    hasAudio,
+    isExportingVideo,
+    isPreparing,
+    preferredExportPresetId,
+    project,
+    rendererDiagnostics.mode,
+    updatePrerenderStats,
+  ])
 
   const syncStageFrame = useCallback((timeMs: number) => {
     playbackTimeMsRef.current = timeMs
@@ -198,7 +363,6 @@ export function VisualizerEditor() {
   }, [])
 
   const activeStagePreset = useMemo(() => stagePresets.find((p) => p.width === project.stage.width && p.height === project.stage.height)?.id ?? 'desktop', [project.stage.height, project.stage.width])
-  const hasAudio = Boolean(project.audio?.url)
   const suggestedExportTitle = useMemo(
     () => suggestExportTitle(project.audio?.filename, project.name),
     [project.audio?.filename, project.name],
@@ -437,11 +601,13 @@ export function VisualizerEditor() {
   useEffect(() => {
     const audio = audioRef.current
     const urlMap = managedObjectUrlsRef.current
+    const prerenderCache = prerenderCacheRef.current
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       audio?.pause()
       for (const url of urlMap.keys()) URL.revokeObjectURL(url)
       urlMap.clear()
+      prerenderCache.clear()
     }
   }, [])
 
@@ -831,8 +997,21 @@ export function VisualizerEditor() {
     // Render function for the encode loop: native canvas or html2canvas compat.
     // Use manifest.nativeRenderer (authoritative) rather than the pre-compute local flag.
     const capturedManifest = manifest
+    const exportChunks = buildPrerenderChunks(duration * 1000)
+    const exportIdentities = buildChunkFingerprintMap(snapshot, exportChunks, preset, outputW, outputH)
     const renderFrame = capturedManifest.nativeRenderer
-      ? (timeMs: number) => renderCanvasFrame(ctx, snapshot, capturedManifest, videoEls, timeMs)
+      ? async (timeMs: number) => {
+          const frameIndex = Math.round((timeMs / 1000) * preset.fps)
+          const chunkIndex = chunkIndexAtTime(timeMs, duration * 1000)
+          const identity = exportIdentities.get(chunkIndex)
+          const cachedFrame = identity ? prerenderCacheRef.current.getFrame(identity, frameIndex) : null
+          if (cachedFrame) {
+            ctx.clearRect(0, 0, outputW, outputH)
+            ctx.drawImage(cachedFrame, 0, 0, outputW, outputH)
+            return
+          }
+          await renderCanvasFrame(ctx, snapshot, capturedManifest, videoEls, timeMs)
+        }
       : renderCompat
 
     // Cleanup: close bitmaps and video elements, reset state.
@@ -1176,6 +1355,9 @@ export function VisualizerEditor() {
           rendererDiagnostics={rendererDiagnostics}
           hasAudioEncoder={AUDIO_ENCODER_SUPPORTED}
           exportStats={exportStats}
+          prerenderStats={prerenderStats}
+          initialPresetId={preferredExportPresetId}
+          onPresetChange={setPreferredExportPresetId}
           onExportPng={(title) => void exportPng(title)}
           onExportWebm={beginExportWebm}
           onCancelVideo={() => { exportCancelRef.current = true; exportAbortRef.current?.abort() }}

@@ -1,0 +1,72 @@
+id,area,developer_prompt
+1,System design,"Map the minimal cloud render architecture: web app, API, DB-backed RenderJob queue, R2 storage, and Railway render-worker. Keep v1 KISS: no Redis, no WebSockets, worker concurrency 1."
+2,Monorepo structure,"Add apps/render-worker to the existing pnpm monorepo and document how apps/web, apps/api, and apps/render-worker share packages without circular dependencies."
+3,Local dev orchestration,"Create root scripts to run web, api, and render-worker together on localhost using pnpm/turbo, with clear ports and env examples for Windows/WSL."
+4,Railway services,"Plan Railway deployment with three services from the same repo: web, api, render-worker. Specify service start commands, root paths, and env variables."
+5,Environment design,"Create a single env contract for local and Railway: DATABASE_URL, R2_* variables, API_PUBLIC_URL, API_INTERNAL_URL, RENDER_WORKER_CONCURRENCY, and render limits."
+6,Schema design,"Add Prisma models Render and RenderJob with statuses, userId, projectId, storage keys, phase, progress, attempts, lockedAt, lockedBy, errorCode, and timestamps."
+7,Schema migration,"Generate and validate the Prisma migration for Render/RenderJob. Keep relationships explicit: User -> Render, Project -> Render, Render -> RenderJob."
+8,Status enums,"Define minimal RenderStatus and RenderJobStatus enums: QUEUED, PROCESSING, READY/SUCCEEDED, FAILED, CANCELLED, DELETED where appropriate."
+9,Job payload contract,"Create packages/render-contracts with CloudRenderPayloadV1. Include version, renderId, projectId, asset IDs/keys, outputKey, preset, duration, dimensions, fps, and subtitle settings."
+10,Storage contract,"Define R2 storage key conventions for inputs, subtitles, final MP4, and poster JPG. Worker must never accept arbitrary client-provided keys without DB validation."
+11,API design,"Implement POST /api/generate as a fail-fast job creator only. It must validate auth, ownership, limits, project assets, and create Render + RenderJob in one transaction."
+12,API validation,"Add server-side validation for /api/generate payload: projectId, preset, outputFormat, optional range, and reject unknown fields or unsupported presets."
+13,Auth enforcement,Ensure /api/generate requires an authenticated user. No guest cloud render in v1.
+14,Ownership checks,"In /api/generate, verify the project belongs to the session user and all referenced assets belong to that project/user."
+15,Quota checks,"Add conservative quota checks before job creation: one active render per user, max queued renders per user, max daily renders, max duration, max resolution, max fps."
+16,Fail-fast errors,"Return clear typed errors from /api/generate: AUTH_REQUIRED, QUOTA_EXCEEDED, PROJECT_NOT_FOUND, ASSET_MISSING, LIMIT_EXCEEDED, UNSUPPORTED_PRESET."
+17,Render creation transaction,Create Render and RenderJob in a single DB transaction. Render.userId/projectId are source of truth; RenderJob references renderId only.
+18,Status endpoint,Implement GET /api/renders/:id. It must require auth and return only renders owned by the session user.
+19,Render list endpoint,Implement GET /api/projects/:projectId/renders for a project's render history. Enforce ownership and return latest renders first.
+20,Download URL endpoint,Implement POST /api/renders/:id/download-url. Only READY renders get a short-lived signed R2 download URL.
+21,Cancel endpoint,Implement POST /api/renders/:id/cancel. QUEUED jobs become CANCELLED; PROCESSING jobs set cancelRequested for the worker.
+22,Delete endpoint,Implement DELETE /api/renders/:id. Soft-delete the Render and optionally schedule R2 cleanup. Do not physically delete during the request if risky.
+23,Polling strategy,Use frontend polling for v1 render status every 2–5 seconds. Do not add WebSockets yet.
+24,SSE design,Add an optional lightweight SSE endpoint /api/renders/:id/events only after polling works. It should stream Render status/phase/progress updates and reuse the same response shape.
+25,SSE safety,"If implementing SSE, add auth/ownership checks at connection time, heartbeat comments, connection cleanup, and fallback to polling."
+26,Worker bootstrap,"Create apps/render-worker Node entrypoint. On boot, load env, connect DB/R2, generate workerId, cleanup stale temp dirs, and start a polling loop."
+27,Worker polling,Implement worker polling with a 2–5 second idle delay. Avoid tight DB loops.
+28,Atomic claim,Implement atomic job claim: only one worker can transition a QUEUED RenderJob to PROCESSING using a transaction or conditional update.
+29,Worker ownership validation,"After claiming, worker reloads Render, Project, and Assets from DB and verifies user/project ownership before downloading anything."
+30,Payload validation in worker,Parse CloudRenderPayloadV1 with strict schema validation. Fail jobs with BAD_PAYLOAD if version/required fields are invalid.
+31,Stale lock recovery,"Add stale job recovery: PROCESSING jobs locked too long are requeued if attempts remain, otherwise FAILED_STALE."
+32,Retry policy,"Implement maxAttempts=2. Retry only infrastructure failures; do not retry bad input, unsupported media, quota/limit failures, or user cancellation."
+33,Temp workspace,"Create isolated temp workspace /tmp/renders/{jobId}. Download inputs there, write output there, and delete in finally."
+34,R2 download helper,Create shared R2 helper to download DB-approved objects to local temp files with size/error handling.
+35,Media probing,"Use ffprobe to validate input video/audio streams, dimensions, duration, and basic codec availability before rendering."
+36,FFmpeg command builder,Build a small typed FFmpeg command builder for v1: input video + input audio + SRT subtitles -> H.264/AAC MP4.
+37,Subtitle burn-in,Implement subtitle burn-in using FFmpeg subtitles/ass filter. Start with simple SRT styling and document limitations versus canvas preview.
+38,Subtitle style mapping,"Map app subtitle settings to FFmpeg/ASS style fields where feasible: font, size, color, outline, alignment, margins. Keep unsupported styles explicit."
+39,Progress parsing,Run FFmpeg with -progress pipe:1 -nostats and parse out_time_ms to update RenderJob progress during RENDERING.
+40,Phase progress model,"Use phase-weighted progress: QUEUED 0, DOWNLOADING 5-15, PROBING 15-20, RENDERING 20-85, UPLOADING 85-95, FINALIZING 95-100, READY 100."
+41,Timeouts,"Add hard job timeout: min(duration * 5, 20 minutes) for v1. Kill FFmpeg on timeout and mark FAILED_TIMEOUT."
+42,Cancellation handling,"During FFmpeg, poll cancelRequested every few seconds. Kill FFmpeg gracefully, then force kill if needed, and mark CANCELLED."
+43,Output validation,"After FFmpeg finishes, verify output.mp4 exists, size > 0, and ffprobe sees video/audio streams with expected duration."
+44,Poster generation,Generate poster.jpg from midpoint or first valid frame after output validation. Upload poster to R2 with the render.
+45,R2 upload helper,Upload final.mp4 and poster.jpg to R2 with correct content types. Do not keep final files on Railway disk.
+46,Mark ready,"After upload succeeds, update Render READY with outputKey, posterKey, duration, size, completedAt; update RenderJob SUCCEEDED."
+47,Failure handling,"On any worker error, save errorCode and safe user-facing errorMessage. Include internal details only in server logs."
+48,Resource limits,"Enforce worker-side limits again: max duration, max dimensions, max fps, max input size. Never trust API-only validation."
+49,Worker concurrency,"Set RENDER_WORKER_CONCURRENCY=1 for v1. Design loop so increasing concurrency later is a config change, not a rewrite."
+50,Railway Dockerfile,"Add apps/render-worker/Dockerfile using node:22-bookworm with ffmpeg, fontconfig, and safe fonts installed."
+51,Railway variables,Document Railway env vars for worker and api. Worker should have no public domain and no user-facing routes.
+52,Local Windows setup,"Write local Windows/WSL setup notes: install ffmpeg locally or use Docker, configure R2 dev bucket, run pnpm dev, verify worker can render a sample."
+53,Seed/test fixture,"Add a small local render fixture: short video, short audio, sample SRT. Use it to test worker end-to-end without the full UI."
+54,API integration test,"Add tests for /api/generate: unauthenticated, wrong owner, missing asset, quota exceeded, valid job creation."
+55,Worker unit tests,"Add unit tests for payload parsing, command building, phase progress mapping, and error classification."
+56,Worker integration smoke,"Add a local smoke script that inserts a RenderJob, runs the worker once, and verifies final.mp4 is uploaded or written to a test output."
+57,Frontend cloud button,Add a 'Save Online / Cloud Render' button near export controls. Keep local Draft export separate.
+58,Save modal reuse,"Reuse existing save/export modal for cloud render. Add cloud option, preset selector, expected duration/limits, and auth-required messaging."
+59,Frontend generate call,Wire the cloud render button to POST /api/generate and show immediate QUEUED state on success.
+60,Frontend status polling,"Poll GET /api/renders/:id while queued/processing. Show phase, percentage, and safe error messages."
+61,Frontend SSE optional,"If SSE is added, make the modal use SSE when available and polling fallback otherwise. Do not block v1 on SSE."
+62,Frontend render history,"Add a simple render history list under project/export panel: status, preset, createdAt, download button when READY."
+63,Download flow,"When render is READY, request signed download URL and open/download it. Do not expose raw R2 keys in the UI."
+64,Quota UI,"Show user-friendly limits before creating a job: max duration, max resolution, active render count. Keep API as source of truth."
+65,Admin/debug view,"Add minimal admin/debug render jobs view only if already have admin role. Show stuck jobs, attempts, phase, progress, error."
+66,Observability,Add structured logs with renderId/jobId/workerId/userId for API creation and worker processing. Avoid logging signed URLs or secrets.
+67,Safety review,"Review every path for abuse: no anonymous render, no arbitrary storage keys, one active job/user, hard timeouts, cleanup in finally."
+68,KISS review,"Remove anything not needed for POC: no Redis, no WebSockets requirement, no multi-worker autoscale, no full canvas layer render in worker."
+69,Docs,"Write docs/render-worker.md explaining local dev, Railway deployment, env vars, job lifecycle, limits, and known v1 limitations."
+70,Milestone acceptance,"Define POC acceptance: logged-in user can click Save Online, API creates job, worker renders MP4 with subtitles, uploads to R2, UI shows READY and downloads."
+71,Future extension,"Add TODO notes for v2 only: Redis/BullMQ, SSE-only progress, full project render, MP4 variants, paid quotas, cloud render retries/dashboard."

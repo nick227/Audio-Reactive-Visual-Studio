@@ -1,4 +1,4 @@
-import { db } from '@avl/db'
+import { db, type Prisma } from '@avl/db'
 
 export class ProjectService {
   async list(userId: string) {
@@ -65,7 +65,7 @@ export class ProjectService {
     if (!existing) throw { statusCode: 404, message: 'Not found' }
 
     let shareToken!: string
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const share = await tx.projectShare.upsert({
         where: { projectId: id },
         create: { projectId: id },

@@ -4,6 +4,7 @@ import { exportFileBase } from '../export/exportTitle'
 import { EXPORT_PRESETS, DEFAULT_PRESET_ID, getPreset, type ExportPreset, type PresetId } from '../export/presets'
 import type { RendererDiagnostics } from '../export/rendererSupport'
 import type { FrameStats, WebCodecsExportPhase } from '../export/webcodecs'
+import type { CachedChunkStats } from '../prerender'
 
 type Props = {
   hasAudio: boolean
@@ -19,6 +20,9 @@ type Props = {
   rendererDiagnostics: RendererDiagnostics | null
   hasAudioEncoder: boolean
   exportStats: FrameStats | null
+  prerenderStats: CachedChunkStats
+  initialPresetId: PresetId
+  onPresetChange: (presetId: PresetId) => void
   onExportPng: (title: string) => void
   onExportWebm: (title: string, preset: ExportPreset) => void
   onCancelVideo: () => void
@@ -61,7 +65,7 @@ const phaseLabels: Record<WebCodecsExportPhase, string> = {
   complete: 'Starting download',
 }
 
-export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPreparing, preparePhase, prepareProgress, isExportingVideo, videoProgress, exportPhase, rendererMode, rendererDiagnostics, hasAudioEncoder, exportStats, onExportPng, onExportWebm, onCancelVideo, lastExport, onDownloadLastExport, onClearLastExport, onClose }: Props) {
+export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPreparing, preparePhase, prepareProgress, isExportingVideo, videoProgress, exportPhase, rendererMode, rendererDiagnostics, hasAudioEncoder, exportStats, prerenderStats, initialPresetId, onPresetChange, onExportPng, onExportWebm, onCancelVideo, lastExport, onDownloadLastExport, onClearLastExport, onClose }: Props) {
   const diag = useMemo(() => getDiagnostics(), [])
   const canWebCodecs = diag.webCodecs
   const canAudio = canWebCodecs ? diag.audioEncoder : true
@@ -84,7 +88,7 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
     const stored = localStorage.getItem('avl-export-preset-id')
     return (stored === 'draft' || stored === 'standard' || stored === 'high' || stored === 'smooth')
       ? stored
-      : DEFAULT_PRESET_ID
+      : initialPresetId || DEFAULT_PRESET_ID
   })
 
   useEffect(() => {
@@ -93,7 +97,8 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
 
   useEffect(() => {
     localStorage.setItem('avl-export-preset-id', presetId)
-  }, [presetId])
+    onPresetChange(presetId)
+  }, [onPresetChange, presetId])
 
   const preset = getPreset(presetId)
   const fileBase = exportFileBase(title)
@@ -209,6 +214,8 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
               <dt>Renderer</dt><dd>{rendererLabel}</dd>
               <dt>Video</dt>  <dd>{videoCodecLabel}</dd>
               <dt>Audio</dt>  <dd>{audioCodecLabel}</dd>
+              <dt>Prepared</dt>
+              <dd>{prerenderStats.preparedChunks}/{prerenderStats.totalChunks} chunks</dd>
               {rendererDiagnostics && (
                 <>
                   <dt>Layers</dt>

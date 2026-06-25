@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "prebuild": "pnpm --filter @avl/db generate",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",

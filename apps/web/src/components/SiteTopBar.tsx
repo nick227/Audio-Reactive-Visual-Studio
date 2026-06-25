@@ -54,7 +54,7 @@ export function SiteTopBar({ onSaveToCloud, isSaving = false, lastCloudSaved, lo
 
           {user && onSaveToCloud && (
             <>
-            | <a
+            • <a
               className="topbar-link"
               style={styles.savedLocal}
               onClick={onSaveToCloud}
