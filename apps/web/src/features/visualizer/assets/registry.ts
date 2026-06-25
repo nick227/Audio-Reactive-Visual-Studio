@@ -959,6 +959,7 @@ const subtitles: StudioAssetDefinition[] = [
       color: '#ffffff',
       fontSize: 48,
       subtitleOffsetY: 0,
+      subtitleWidth: 76,
       cues: [],
     },
   },

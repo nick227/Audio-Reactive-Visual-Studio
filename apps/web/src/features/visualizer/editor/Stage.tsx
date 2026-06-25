@@ -10,6 +10,7 @@ import { MicroEventEngine } from '../runtime/microEventEngine'
 import { LayerErrorBoundary } from './LayerErrorBoundary'
 import { PuppetCanvasLayer } from './PuppetCanvasLayer'
 import { SubtitleLayer } from './SubtitleLayer'
+import { clampSubtitleWidth, DEFAULT_SUBTITLE_WIDTH, subtitleHandleInset } from '../subtitles/layout'
 import { isTypographyLayer, resolveVisualKind } from '../runtime/layerVisualKind'
 import { puppetRuntimeHost } from '../runtime/puppetRuntimeHost'
 
@@ -184,6 +185,8 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
   const isSubtitle = resolveVisualKind(layer) === 'subtitle'
   const isTypography = isTypographyLayer(layer)
   const counterScale = 1 / Math.max(0.01, layer.placement.scale)
+  const subtitleWidth = Number(layer.settings.subtitleWidth ?? DEFAULT_SUBTITLE_WIDTH)
+  const subtitleInset = subtitleHandleInset(subtitleWidth)
 
   const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>, cursor: string) => {
     if (layer.locked) return
@@ -199,17 +202,16 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
     let move = (_e: PointerEvent) => {}
 
     if (isSubtitle) {
-      // Subtitle resize: scale fontSize relative to subtitle text's screen position.
-      const offsetY = Number(layer.settings.subtitleOffsetY ?? 10)
-      const centerX = stageBounds.left + stageBounds.width * 0.5
-      const centerY = stageBounds.top + stageBounds.height * (1 - offsetY / 100)
-      const startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY)
-      if (startDist < 5) return
-      const startFontSize = Number(layer.settings.fontSize ?? 48)
+      // Subtitle resize: drag side handles to set cue width as % of stage.
+      const centerX = stageBounds.left + (0.5 + layer.placement.x / stageWidth) * stageBounds.width
+      const startHalfWidth = Math.abs(e.clientX - centerX)
+      if (startHalfWidth < 8) return
+      const startWidth = Number(layer.settings.subtitleWidth ?? DEFAULT_SUBTITLE_WIDTH)
       move = (me: PointerEvent) => {
-        const newDist = Math.hypot(me.clientX - centerX, me.clientY - centerY)
+        const nextHalfWidth = Math.abs(me.clientX - centerX)
+        const nextWidth = clampSubtitleWidth(startWidth * (nextHalfWidth / startHalfWidth))
         onUpdateLayer(layer.id, {
-          settings: { fontSize: Math.max(8, Math.round(startFontSize * (newDist / startDist))) },
+          settings: { subtitleWidth: nextWidth },
         })
       }
     } else {
@@ -276,8 +278,10 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
     }
 
     if (isSubtitle) {
-      const startOffsetY = Number(layer.settings.subtitleOffsetY ?? 10)
-      const stageDisplayH = stageBounds.height
+      const scaleX = stageBounds.width ? stageWidth / stageBounds.width : 1
+      const scaleY = stageBounds.height ? stageHeight / stageBounds.height : 1
+      const originX = layer.placement.x
+      const originY = layer.placement.y
       move = (me: PointerEvent) => {
         if (!dragging) {
           if (Math.hypot(me.clientX - startClientX, me.clientY - startClientY) < 4) return
@@ -286,9 +290,13 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
           document.body.style.userSelect = 'none'
           el.setPointerCapture(me.pointerId)
         }
-        const deltaYPct = ((me.clientY - startClientY) / stageDisplayH) * 100
         onUpdateLayer(layer.id, {
-          settings: { subtitleOffsetY: Math.max(2, Math.min(95, startOffsetY - deltaYPct)) },
+          placement: {
+            ...layer.placement,
+            fit: 'custom',
+            x: originX + (me.clientX - startClientX) * scaleX,
+            y: originY + (me.clientY - startClientY) * scaleY,
+          },
         })
       }
     } else {
@@ -349,12 +357,12 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
             <>
               <div
                 className="resize-handle resize-handle-sub-l"
-                style={{ bottom: `${Number(layer.settings.subtitleOffsetY ?? 0)}%` }}
+                style={{ bottom: `${Number(layer.settings.subtitleOffsetY ?? 0)}%`, left: `${subtitleInset}%` }}
                 onPointerDown={(e) => handleResizeStart(e, 'ew-resize')}
               />
               <div
                 className="resize-handle resize-handle-sub-r"
-                style={{ bottom: `${Number(layer.settings.subtitleOffsetY ?? 0)}%` }}
+                style={{ bottom: `${Number(layer.settings.subtitleOffsetY ?? 0)}%`, right: `${subtitleInset}%` }}
                 onPointerDown={(e) => handleResizeStart(e, 'ew-resize')}
               />
             </>

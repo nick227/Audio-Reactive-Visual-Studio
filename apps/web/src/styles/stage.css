@@ -89,6 +89,6 @@
 .resize-handle-sw { bottom: 0; left: 0;  margin: 0 0 -5px -5px; cursor: sw-resize; transform-origin: bottom left; }
 .resize-handle-se { bottom: 0; right: 0; margin: 0 -5px -5px 0; cursor: se-resize; transform-origin: bottom right; }
 
-/* subtitle side handles */
-.resize-handle-sub-l { left: 12%; cursor: ew-resize; transform-origin: center left; }
-.resize-handle-sub-r { right: 12%; cursor: ew-resize; transform-origin: center right; }
+/* subtitle side handles — left/right set inline from subtitleWidth */
+.resize-handle-sub-l { cursor: ew-resize; transform-origin: center left; }
+.resize-handle-sub-r { cursor: ew-resize; transform-origin: center right; }

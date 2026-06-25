@@ -3,6 +3,7 @@ import { AlignLeft, Bot, Download, FileText, Loader, Mic2, Palette, Plus, Trash2
 import { parseSrt, displayToMs, msToDisplay, formatSrt, MAX_SRT_CUES } from '../subtitles/parseSrt'
 import type { SrtCue } from '../subtitles/parseSrt'
 import { lyricsToSrt, srtToLyrics } from '../subtitles/lyricsToSrt'
+import { DEFAULT_SUBTITLE_WIDTH, MAX_SUBTITLE_WIDTH, MIN_SUBTITLE_WIDTH } from '../subtitles/layout'
 import type { LayerInstance, SubtitleStyle } from '../project/types'
 
 type TabId = 'lyrics' | 'import' | 'ai' | 'style'
@@ -500,6 +501,7 @@ function StyleTab({ layer, onUpdate }: { layer: LayerInstance; onUpdate: (patch:
   const currentStyle = String(layer.settings.subtitleStyle ?? 'cinematic') as SubtitleStyle
   const color = String(layer.settings.color ?? '#ffffff')
   const fontSize = Number(layer.settings.fontSize ?? 48)
+  const subtitleWidth = Number(layer.settings.subtitleWidth ?? DEFAULT_SUBTITLE_WIDTH)
   const scale = layer.placement.scale
   const offsetY = Number(layer.settings.subtitleOffsetY ?? 10)
   const position = offsetToPosition(offsetY)
@@ -543,6 +545,11 @@ function StyleTab({ layer, onUpdate }: { layer: LayerInstance; onUpdate: (patch:
             <span>Font size <em>{fontSize}px</em></span>
             <input type="range" min={20} max={120} step={2} value={fontSize}
               onChange={(e) => onUpdate({ settings: { ...layer.settings, fontSize: Number(e.target.value) } })} />
+          </label>
+          <label className="srt-slider-row">
+            <span>Text width <em>{subtitleWidth}%</em></span>
+            <input type="range" min={MIN_SUBTITLE_WIDTH} max={MAX_SUBTITLE_WIDTH} step={1} value={subtitleWidth}
+              onChange={(e) => onUpdate({ settings: { ...layer.settings, subtitleWidth: Number(e.target.value) } })} />
           </label>
           <label className="srt-slider-row">
             <span>Container scale <em>{Math.round(scale * 100)}%</em></span>

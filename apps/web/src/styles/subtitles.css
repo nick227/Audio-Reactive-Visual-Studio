@@ -9,25 +9,43 @@
 .subtitle-layer {
   position: absolute;
   inset: 0;
-  padding: 0 32px;
   text-align: center;
-  display: flex; flex-direction: column; align-items: center;
   pointer-events: none;
   will-change: contents;
 }
 
-.subtitle-pos-bottom { justify-content: flex-end; padding-bottom: 22px; }
-.subtitle-pos-middle { justify-content: center; }
-.subtitle-pos-top    { justify-content: flex-start; padding-top: 22px; }
+.subtitle-pos-bottom,
+.subtitle-pos-middle,
+.subtitle-pos-top { padding-top: 0; padding-bottom: 0; }
 
 .subtitle-cue {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  position: absolute;
+  left: 50%;
+  bottom: clamp(0%, var(--subtitle-offset-y, 10%), 100%);
+  width: var(--subtitle-width, 76%);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.subtitle-cue-inner {
   animation: subtitle-enter 80ms ease-out both;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
 }
 
 .subtitle-line {
-  display: inline-block;
+  display: block;
+  width: 100%;
+  min-width: 0;
   line-height: 1.3;
+  text-align: center;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 /* Cinematic — dark pill, serif, letter-spaced */
