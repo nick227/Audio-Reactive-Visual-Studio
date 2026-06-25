@@ -5,6 +5,7 @@ import type { SrtCue } from '../subtitles/parseSrt'
 import { lyricsToSrt, srtToLyrics } from '../subtitles/lyricsToSrt'
 import { DEFAULT_SUBTITLE_WIDTH, MAX_SUBTITLE_WIDTH, MIN_SUBTITLE_WIDTH } from '../subtitles/layout'
 import type { LayerInstance, SubtitleStyle } from '../project/types'
+import { getApiBaseUrl } from '../../../lib/apiBaseUrl'
 
 type TabId = 'lyrics' | 'import' | 'ai' | 'style'
 
@@ -346,7 +347,7 @@ function AiTab({
       if (useLyrics && rawLyrics.trim()) form.append('lyrics', rawLyrics.trim())
 
       setStatus('processing')
-      const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+      const apiBase = getApiBaseUrl()
       const res = await fetch(`${apiBase}/ai/transcribe`, {
         method: 'POST',
         body: form,
