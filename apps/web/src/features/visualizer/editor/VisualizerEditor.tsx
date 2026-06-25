@@ -9,7 +9,7 @@ import { buildWaveformPeaks } from '../audio/waveform'
 import type { AudioFeatures } from '../audio/audioTypes'
 import { silentAudioFeatures } from '../audio/audioTypes'
 import { createDefaultProject } from '../project/defaultProject'
-import { clearSavedProject, saveProject } from '../project/projectPersistence'
+import { clearSavedProject, loadLocalSaveMeta, loadSavedProject, saveProject } from '../project/projectPersistence'
 import type { LayerInstance, Project, StagePresetId } from '../project/types'
 import { assetRegistry } from '../assets/registry'
 import { createEntityId, nowIso } from '../entities/entityTypes'
@@ -21,6 +21,17 @@ import { MediaModal } from './MediaModal'
 import { SubtitleModal } from './SubtitleModal'
 import { ExportPanel } from './ExportPanel'
 import { exportFileBase, suggestExportTitle } from '../export/exportTitle'
+import { WEBCODECS_SUPPORTED, AUDIO_ENCODER_SUPPORTED, exportVideoWebCodecs, type FrameStats } from '../export/webcodecs'
+import { computeOutputSize, type ExportPreset } from '../export/presets'
+import { prepareExport, ExportValidationError } from '../export/prepare'
+import type { ExportRenderContext } from '../export/prepare'
+import {
+  canUseNativeRenderer,
+  analyzeRendererSupport,
+  createExportVideoElements,
+  disposeExportVideoElements,
+  renderCanvasFrame,
+} from '../export/renderCanvasFrame'
 import { VideoSettingsModal } from './VideoSettingsModal'
 import { idbPut, idbGet, idbDelete } from '../storage/idbStorage'
 import { SiteTopBar } from '../../../components/SiteTopBar'
@@ -64,7 +75,7 @@ function cloneProject(p: Project): Project {
 export function VisualizerEditor() {
   const [history, setHistory] = useState<HistoryState>(() => ({
     past: [],
-    present: createDefaultProject(),
+    present: loadSavedProject() ?? createDefaultProject(),
     future: [],
   }))
   const project = history.present
@@ -79,6 +90,13 @@ export function VisualizerEditor() {
   )
   const [isSaving, setIsSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState<string | null>(null)
+  const [localSavedAt, setLocalSavedAt] = useState<string | null>(() => loadLocalSaveMeta()?.savedAt ?? null)
+
+  // Refs for auto-cloud-save and beforeunload — avoids stale closures in intervals/event handlers
+  const cloudDirtyRef = useRef(false)
+  const lastAutoCloudSaveRef = useRef(cloudProjectId ? Date.now() : 0)
+  const projectRef = useRef(project)
+  projectRef.current = project
 
   // Clear stale cloud project ID when the user changes (logout or different user on same browser)
   const prevUserIdRef = useRef<string | null | undefined>(undefined)
@@ -96,24 +114,24 @@ export function VisualizerEditor() {
     if (!me) return
     setIsSaving(true)
     try {
-      const doc = JSON.parse(JSON.stringify(project)) // deep clone, strips undefined
+      const doc = JSON.parse(JSON.stringify(projectRef.current)) // deep clone, strips undefined
       if (cloudProjectId) {
-        await updateProject.mutateAsync({ id: cloudProjectId, title: project.name, documentJson: doc })
-        setLastSaved(new Date().toISOString())
-        toast.success('Project saved')
+        await updateProject.mutateAsync({ id: cloudProjectId, title: projectRef.current.name, documentJson: doc })
       } else {
-        const saved = await createProject.mutateAsync({ title: project.name, documentJson: doc, schemaVersion: project.schemaVersion })
+        const saved = await createProject.mutateAsync({ title: projectRef.current.name, documentJson: doc, schemaVersion: projectRef.current.schemaVersion })
         setCloudProjectId(saved.id)
         localStorage.setItem('avl.cloud-project-id', saved.id)
-        setLastSaved(new Date().toISOString())
-        toast.success('Project saved to cloud')
       }
+      cloudDirtyRef.current = false
+      lastAutoCloudSaveRef.current = Date.now()
+      setLastSaved(new Date().toISOString())
+      toast.success('Saved to cloud')
     } catch {
-      toast.error('Failed to save to cloud')
+      toast.error('Cloud save failed')
     } finally {
       setIsSaving(false)
     }
-  }, [me, project, cloudProjectId, createProject, updateProject])
+  }, [me, cloudProjectId, createProject, updateProject])
   // ────────────────────────────────────────────────────────────────────────
 
   const [selectedLayerId, setSelectedLayerId] = useState(() => project.layers[project.layers.length - 1]?.id ?? '')
@@ -125,10 +143,19 @@ export function VisualizerEditor() {
   const [sessionUploads, setSessionUploads] = useState<Array<{ id: string; name: string; url: string; fileKey: string }>>([])
   const [sessionVideos, setSessionVideos] = useState<Array<{ id: string; name: string; url: string; fileKey: string }>>([])
   const [isExporting, setIsExporting] = useState(false)
+  const [isPreparing, setIsPreparing] = useState(false)
+  const [preparePhase, setPreparePhase] = useState('')
+  const [prepareProgress, setPrepareProgress] = useState(0)
   const [isExportingVideo, setIsExportingVideo] = useState(false)
   const [exportVideoProgress, setExportVideoProgress] = useState(0)
   const [exportOpen, setExportOpen] = useState(false)
   const [exportSnapshot, setExportSnapshot] = useState<Project | null>(null)
+  const [lastExport, setLastExport] = useState<{ filename: string; mimeType: string } | null>(() => {
+    try {
+      const raw = localStorage.getItem('avl-export-webm-meta')
+      return raw ? (JSON.parse(raw) as { filename: string; mimeType: string }) : null
+    } catch { return null }
+  })
   const stageProject = exportSnapshot ?? project
   const [subtitleOpen, setSubtitleOpen] = useState(false)
   const [videoSettingsLayerId, setVideoSettingsLayerId] = useState<string | null>(null)
@@ -149,6 +176,18 @@ export function VisualizerEditor() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tickRef = useRef<(time: number) => void>(() => {})
   const exportCancelRef = useRef(false)
+  const exportAbortRef = useRef<AbortController | null>(null)
+
+  // Per-frame encode stats: updated during video export for ETA display.
+  const [exportStats, setExportStats] = useState<FrameStats | null>(null)
+
+  // Renderer diagnostics: computed from current project layers (both for ExportPanel display
+  // and to derive rendererMode without a redundant second pass).
+  const rendererDiagnostics = useMemo(
+    () => analyzeRendererSupport(project.layers),
+    [project.layers],
+  )
+  const rendererMode = rendererDiagnostics.mode
 
   const syncStageFrame = useCallback((timeMs: number) => {
     playbackTimeMsRef.current = timeMs
@@ -297,17 +336,20 @@ export function VisualizerEditor() {
 
   // ── Persistence ─────────────────────────────────────────────────────────────
 
-  // Debounced save — flush synchronously on cleanup so unmount/close doesn't lose the last edit.
+  // Debounced local save — flush synchronously on cleanup so unmount/close doesn't lose the last edit.
   useEffect(() => {
+    cloudDirtyRef.current = true
     if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
       saveProject(project)
+      setLocalSavedAt(new Date().toISOString())
       saveTimerRef.current = null
     }, 400)
     return () => {
       if (saveTimerRef.current !== null) {
         clearTimeout(saveTimerRef.current)
         saveProject(project)
+        setLocalSavedAt(new Date().toISOString())
         saveTimerRef.current = null
       }
     }
@@ -335,9 +377,13 @@ export function VisualizerEditor() {
   }, [])
 
   // Restore blob URLs from IndexedDB after initial load.
+  // Also repopulates the session media lists so the media panel shows previously-uploaded files.
   useEffect(() => {
     async function restoreBlobs() {
       let anyChanged = false
+      const restoredUploads: typeof sessionUploads = []
+      const restoredVideos: typeof sessionVideos = []
+
       const restoredLayers = await Promise.all(
         project.layers.map(async (layer) => {
           const srcKey = layer.settings.srcKey
@@ -347,6 +393,9 @@ export function VisualizerEditor() {
             if (!blob) return layer
             const url = registerObjectUrl(URL.createObjectURL(blob))
             anyChanged = true
+            const entry = { id: srcKey, name: layer.name, url, fileKey: srcKey }
+            if (srcKey.startsWith('img_')) restoredUploads.push(entry)
+            else if (srcKey.startsWith('vid_')) restoredVideos.push(entry)
             return { ...layer, settings: { ...layer.settings, src: url } }
           } catch {
             return layer
@@ -373,6 +422,9 @@ export function VisualizerEditor() {
         }
       }
 
+      if (restoredUploads.length) setSessionUploads(restoredUploads)
+      if (restoredVideos.length) setSessionVideos(restoredVideos)
+
       if (anyChanged) {
         // Patch present only — blob restoration is not a user action.
         setHistory((h) => ({ ...h, present: { ...h.present, layers: restoredLayers, audio: restoredAudio } }))
@@ -391,6 +443,31 @@ export function VisualizerEditor() {
       urlMap.clear()
     }
   }, [])
+
+  // Warn before tab close if the project has any content.
+  // Local save happens within 400ms so actual data loss only occurs in incognito or after clearing storage.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      const p = projectRef.current
+      if (!p.audio && p.layers.length === 0) return
+      e.preventDefault()
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [])
+
+  // Auto-save to cloud every 5 minutes for signed-in users.
+  const handleSaveToCloudRef = useRef(handleSaveToCloud)
+  handleSaveToCloudRef.current = handleSaveToCloud
+  useEffect(() => {
+    if (!me) return
+    const iv = setInterval(() => {
+      if (!cloudDirtyRef.current) return
+      if (Date.now() - lastAutoCloudSaveRef.current < 5 * 60 * 1000) return
+      void handleSaveToCloudRef.current()
+    }, 60_000)
+    return () => clearInterval(iv)
+  }, [me])
 
   // ── Layer operations ─────────────────────────────────────────────────────────
 
@@ -644,7 +721,7 @@ export function VisualizerEditor() {
     syncStageFrame(ms)
   }
 
-  const exportWebm = useCallback(async (snapshot: Project) => {
+  const exportWebm = useCallback(async (snapshot: Project, preset: ExportPreset) => {
     const audio = audioRef.current
     const stageEl = stageRef.current?.getStageElement()
     if (!audio || !stageEl || !snapshot.audio?.duration) return
@@ -657,91 +734,254 @@ export function VisualizerEditor() {
 
     const displayW = stageEl.offsetWidth
     const displayH = stageEl.offsetHeight
+    const { w: outputW, h: outputH } = computeOutputSize(displayW, displayH, preset)
     const outputCanvas = document.createElement('canvas')
-    outputCanvas.width = displayW
-    outputCanvas.height = displayH
+    outputCanvas.width = outputW
+    outputCanvas.height = outputH
     const ctx = outputCanvas.getContext('2d')!
-
-    // Include opus so MediaRecorder can mux the audio track alongside video.
-    const mimeType = (
-      ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] as const
-    ).find((t) => MediaRecorder.isTypeSupported(t)) ?? 'video/webm'
-
-    // Init engine before building the stream so we can tap the audio output.
-    audio.currentTime = 0
-    engineRef.current ??= new AudioEngine()
-    engineRef.current.connect(audio)
-    await engineRef.current.resume()
-    engineRef.current.setOutputMuted(true)
-
-    // Merge canvas video tracks with live audio tracks from the WebAudio graph.
-    const videoTracks = outputCanvas.captureStream(30).getTracks()
-    const audioStream = engineRef.current.getAudioStream()
-    const recordStream = audioStream
-      ? new MediaStream([...videoTracks, ...audioStream.getTracks()])
-      : new MediaStream(videoTracks)
-
-    const recorder = new MediaRecorder(recordStream, { mimeType, videoBitsPerSecond: 5_000_000 })
-    const chunks: Blob[] = []
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
 
     exportCancelRef.current = false
     exportActiveRef.current = true
+
+    // html2canvas render — used when compat mode is chosen by the manifest.
+    const renderCompat = async (timeMs: number) => {
+      setCurrentTimeMs(timeMs)
+      syncStageFrame(timeMs)
+      try {
+        const frame = await html2canvas(stageEl, { scale: 1, useCORS: true, allowTaint: true, logging: false })
+        ctx.drawImage(frame, 0, 0, outputW, outputH)
+      } catch { /* non-fatal: skip frame */ }
+    }
+
+    // Pre-create video elements so they begin loading during the preparation phase.
+    // We create them speculatively (same logic as rendererDiagnostics) — if the
+    // manifest ends up in compat mode they're simply never used (disposed in cleanup).
+    const videoEls = canUseNativeRenderer(snapshot.layers)
+      ? createExportVideoElements(snapshot.layers)
+      : new Map<string, HTMLVideoElement>()
+
+    // ── Preparation phase ─────────────────────────────────────────────────────
+    const abort = new AbortController()
+    exportAbortRef.current = abort
+
+    setIsPreparing(true)
+    setPrepareProgress(0)
+    setPreparePhase('')
+
+    let manifest: Awaited<ReturnType<typeof prepareExport>> | null = null
+    try {
+      manifest = await prepareExport({
+        snapshot,
+        preset,
+        outputWidth: outputW,
+        outputHeight: outputH,
+        signal: abort.signal,
+        rehearseCompat: renderCompat,
+        rehearseNative: async (timeMs: number, renderCtx: ExportRenderContext) => {
+          await renderCanvasFrame(ctx, snapshot, renderCtx, videoEls, timeMs)
+        },
+        onProgress: ({ phaseLabel, overall }) => {
+          setPreparePhase(phaseLabel)
+          setPrepareProgress(overall)
+        },
+      })
+    } catch (e) {
+      if (e instanceof ExportValidationError) {
+        toast.error(e.message)
+      } else if (!(e instanceof DOMException && e.name === 'AbortError')) {
+        toast.error('Export preparation failed.')
+        console.error('[prepareExport]', e)
+      }
+      disposeExportVideoElements(videoEls)
+      exportAbortRef.current = null
+      exportActiveRef.current = false
+      setIsPreparing(false)
+      setExportSnapshot(null)
+      return
+    } finally {
+      setIsPreparing(false)
+    }
+
+    if (abort.signal.aborted) {
+      disposeExportVideoElements(videoEls)
+      exportAbortRef.current = null
+      exportActiveRef.current = false
+      setExportSnapshot(null)
+      return
+    }
+
+    if (manifest.rehearsalFramesOk === 0) {
+      toast.error('Rehearsal failed — the stage could not be rendered. Export aborted.')
+      disposeExportVideoElements(videoEls)
+      exportAbortRef.current = null
+      exportActiveRef.current = false
+      setExportSnapshot(null)
+      return
+    }
+
+    // ── Encode phase ──────────────────────────────────────────────────────────
     setIsExportingVideo(true)
     setExportVideoProgress(0)
+    setExportStats(null)
 
-    try {
-      recorder.start(250)
-      await audio.play()
-      setIsPlaying(true)
-      rafRef.current = requestAnimationFrame(tickRef.current)
+    // Render function for the encode loop: native canvas or html2canvas compat.
+    // Use manifest.nativeRenderer (authoritative) rather than the pre-compute local flag.
+    const capturedManifest = manifest
+    const renderFrame = capturedManifest.nativeRenderer
+      ? (timeMs: number) => renderCanvasFrame(ctx, snapshot, capturedManifest, videoEls, timeMs)
+      : renderCompat
 
-      // Render frames into the output canvas. captureStream samples at 30fps.
-      while (!exportCancelRef.current && !audio.ended && audio.currentTime < duration) {
-        try {
-          const frameMs = audio.currentTime * 1000
-          setCurrentTimeMs(frameMs)
-          syncStageFrame(frameMs)
-          const frame = await html2canvas(stageEl, { scale: 1, useCORS: true, allowTaint: true, logging: false })
-          ctx.drawImage(frame, 0, 0, displayW, displayH)
-        } catch { /* skip frame */ }
-        setExportVideoProgress(Math.min(audio.currentTime / duration, 1))
-        // Yield so cancel button clicks and React state flush.
-        await new Promise<void>((r) => setTimeout(r, 0))
-      }
-
-      stopPlayback()
-      // Register onstop before calling stop() so the event is never missed.
-      await new Promise<void>((r) => {
-        recorder.addEventListener('stop', () => r(), { once: true })
-        recorder.stop()
-      })
-
-      if (!exportCancelRef.current && chunks.length > 0) {
-        const blob = new Blob(chunks, { type: mimeType })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${exportFileBase(snapshot.name)}.webm`
-        a.click()
-        setTimeout(() => URL.revokeObjectURL(url), 30_000)
-      }
-    } finally {
-      engineRef.current?.setOutputMuted(false)
+    // Cleanup: close bitmaps and video elements, reset state.
+    const cleanup = () => {
+      for (const layer of capturedManifest.layers) layer.bitmap?.close()
+      disposeExportVideoElements(videoEls)
+      exportAbortRef.current = null
       exportActiveRef.current = false
       setExportSnapshot(null)
       setIsExportingVideo(false)
       setExportVideoProgress(0)
     }
+
+    if (WEBCODECS_SUPPORTED) {
+      // ── WebCodecs path: deterministic timestamps, frame-accurate encode ──
+      try {
+        const { blob } = await exportVideoWebCodecs({
+          canvas: outputCanvas,
+          fps: preset.fps,
+          durationMs: duration * 1000,
+          bitrate: preset.bitrate,
+          audioUrl: snapshot.audio?.url,
+          onProgress: (p) => setExportVideoProgress(p),
+          onFrameStats: setExportStats,
+          signal: abort.signal,
+          renderFrame,
+          // VP9 is the default — AV1 software encoding is 10–50× slower on CPU.
+          // Set videoCodec: 'auto' to probe for hardware AV1 if needed.
+          videoCodec: 'vp9',
+        })
+
+        if (!abort.signal.aborted) {
+          const mimeType = 'video/webm'
+          const filename = `${exportFileBase(snapshot.name)}.webm`
+          try {
+            await idbPut('export-webm-last', blob)
+            const meta = { filename, mimeType }
+            localStorage.setItem('avl-export-webm-meta', JSON.stringify(meta))
+            setLastExport(meta)
+          } catch { /* IDB unavailable — download still proceeds */ }
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = filename
+          a.click()
+          setTimeout(() => URL.revokeObjectURL(url), 30_000)
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          // cancelled — no-op
+        } else {
+          toast.error('Video export failed. Try the MediaRecorder fallback.')
+          console.error('[WebCodecs export]', e)
+        }
+      } finally {
+        cleanup()
+      }
+    } else {
+      // ── MediaRecorder fallback: real-time canvas capture with audio ──
+      const mimeType = (
+        ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] as const
+      ).find((t) => MediaRecorder.isTypeSupported(t)) ?? 'video/webm'
+
+      audio.currentTime = 0
+      engineRef.current ??= new AudioEngine()
+      engineRef.current.connect(audio)
+      await engineRef.current.resume()
+      engineRef.current.setOutputMuted(true)
+
+      const videoTracks = outputCanvas.captureStream(preset.fps).getTracks()
+      const audioStream = engineRef.current.getAudioStream()
+      const recordStream = audioStream
+        ? new MediaStream([...videoTracks, ...audioStream.getTracks()])
+        : new MediaStream(videoTracks)
+
+      const recorder = new MediaRecorder(recordStream, { mimeType, videoBitsPerSecond: preset.bitrate })
+      const chunks: Blob[] = []
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+
+      try {
+        recorder.start(250)
+        await audio.play()
+        setIsPlaying(true)
+        rafRef.current = requestAnimationFrame(tickRef.current)
+
+        while (!exportCancelRef.current && !audio.ended && audio.currentTime < duration) {
+          try {
+            const frameMs = audio.currentTime * 1000
+            setCurrentTimeMs(frameMs)
+            syncStageFrame(frameMs)
+            const frame = await html2canvas(stageEl, { scale: 1, useCORS: true, allowTaint: true, logging: false })
+            ctx.drawImage(frame, 0, 0, outputW, outputH)
+          } catch { /* skip frame */ }
+          setExportVideoProgress(Math.min(audio.currentTime / duration, 1))
+          await new Promise<void>((r) => setTimeout(r, 0))
+        }
+
+        stopPlayback()
+        await new Promise<void>((r) => {
+          recorder.addEventListener('stop', () => r(), { once: true })
+          recorder.stop()
+        })
+
+        if (!exportCancelRef.current && chunks.length > 0) {
+          const blob = new Blob(chunks, { type: mimeType })
+          const filename = `${exportFileBase(snapshot.name)}.webm`
+          try {
+            await idbPut('export-webm-last', blob)
+            const meta = { filename, mimeType }
+            localStorage.setItem('avl-export-webm-meta', JSON.stringify(meta))
+            setLastExport(meta)
+          } catch { /* IDB unavailable — download still proceeds */ }
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = filename
+          a.click()
+          setTimeout(() => URL.revokeObjectURL(url), 30_000)
+        }
+      } finally {
+        engineRef.current?.setOutputMuted(false)
+        cleanup()
+      }
+    }
   }, [stopPlayback, syncStageFrame])
 
-  const beginExportWebm = useCallback((title: string) => {
+  const beginExportWebm = useCallback((title: string, preset: ExportPreset) => {
     const name = title.trim() || suggestedExportTitle
     persistExportTitle(title)
     const snapshot = cloneProject(project)
     snapshot.name = name
-    void exportWebm(snapshot)
+    void exportWebm(snapshot, preset)
   }, [exportWebm, persistExportTitle, project, suggestedExportTitle])
+
+  const downloadLastExport = useCallback(async () => {
+    if (!lastExport) return
+    try {
+      const blob = await idbGet('export-webm-last')
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = lastExport.filename
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    } catch { /* IDB unavailable */ }
+  }, [lastExport])
+
+  const clearLastExport = useCallback(() => {
+    void idbDelete('export-webm-last')
+    localStorage.removeItem('avl-export-webm-meta')
+    setLastExport(null)
+  }, [])
 
   // ── Stage preset ─────────────────────────────────────────────────────────────
 
@@ -767,7 +1007,8 @@ export function VisualizerEditor() {
         <SiteTopBar
           onSaveToCloud={me ? handleSaveToCloud : undefined}
           isSaving={isSaving}
-          cloudProjectId={lastSaved ? cloudProjectId : null}
+          lastCloudSaved={lastSaved}
+          localSavedAt={localSavedAt}
         />
       )}
 
@@ -829,6 +1070,22 @@ export function VisualizerEditor() {
         {/* ── Layers ── */}
         {!isFullScreen && (
           <>
+            {/* ── Layer list header ── */}
+            <div className="layers-header">
+              <DownloadMediaButton
+                hasAudio={hasAudio}
+                isExportingVideo={isExportingVideo}
+                progress={exportVideoProgress}
+                onStart={() => setExportOpen(true)}
+                onCancel={() => { exportCancelRef.current = true; exportAbortRef.current?.abort() }}
+              />
+              <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => openSubtitleModal()}>
+                <Captions size={13} /> Add Subtitles
+              </button>
+              <button className="layers-add-btn" onClick={() => setMediaOpen(true)}>
+                <Plus size={13} /> Add Layer
+              </button>
+            </div>
             <AssetList
               layers={project.layers}
               selectedLayerId={selectedLayerId}
@@ -843,23 +1100,6 @@ export function VisualizerEditor() {
               onEditSubtitleLayer={editSubtitleLayer}
               onEditVideoLayer={setVideoSettingsLayerId}
             />
-
-            {/* ── Layer list header ── */}
-            <div className="layers-header">
-              <DownloadMediaButton
-                hasAudio={hasAudio}
-                isExportingVideo={isExportingVideo}
-                progress={exportVideoProgress}
-                onStart={() => setExportOpen(true)}
-                onCancel={() => { exportCancelRef.current = true }}
-              />
-              <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => openSubtitleModal()}>
-                <Captions size={13} /> Add Subtitles
-              </button>
-              <button className="layers-add-btn" onClick={() => setMediaOpen(true)}>
-                <Plus size={13} /> Add Layer
-              </button>
-            </div>
           </>
         )}
 
@@ -911,11 +1151,21 @@ export function VisualizerEditor() {
           hasAudio={hasAudio}
           suggestedTitle={suggestedExportTitle}
           isExportingPng={isExporting}
+          isPreparing={isPreparing}
+          preparePhase={preparePhase}
+          prepareProgress={prepareProgress}
           isExportingVideo={isExportingVideo}
           videoProgress={exportVideoProgress}
+          rendererMode={rendererMode}
+          rendererDiagnostics={rendererDiagnostics}
+          hasAudioEncoder={AUDIO_ENCODER_SUPPORTED}
+          exportStats={exportStats}
           onExportPng={(title) => void exportPng(title)}
           onExportWebm={beginExportWebm}
-          onCancelVideo={() => { exportCancelRef.current = true }}
+          onCancelVideo={() => { exportCancelRef.current = true; exportAbortRef.current?.abort() }}
+          lastExport={lastExport}
+          onDownloadLastExport={() => void downloadLastExport()}
+          onClearLastExport={clearLastExport}
           onClose={() => {
             if (isExportingVideo) return
             setExportOpen(false)

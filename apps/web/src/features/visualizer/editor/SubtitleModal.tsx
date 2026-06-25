@@ -5,7 +5,7 @@ import type { SrtCue } from '../subtitles/parseSrt'
 import { lyricsToSrt, srtToLyrics } from '../subtitles/lyricsToSrt'
 import type { LayerInstance, SubtitleStyle } from '../project/types'
 
-type TabId = 'lyrics' | 'import' | 'build' | 'ai' | 'style'
+type TabId = 'lyrics' | 'import' | 'ai' | 'style'
 
 type Props = {
   onClose: () => void
@@ -278,271 +278,6 @@ function ImportTab({
 
       <div className="srt-tab-actions">
         <button type="button" className="srt-add-btn" onClick={handleSrtApply}>
-          Apply
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Build Tab ────────────────────────────────────────────────────────────────
-
-type BuildCue = { id: string; startMs: number; endMs: number; text: string }
-
-function newCueAfter(prev?: BuildCue): BuildCue {
-  const startMs = prev ? prev.endMs : 0
-  return { id: crypto.randomUUID(), startMs, endMs: startMs + 3000, text: '' }
-}
-
-function cuesFromSrt(srt: SrtCue[]): BuildCue[] {
-  return srt.map((c) => ({ id: crypto.randomUUID(), startMs: c.startMs, endMs: c.endMs, text: c.text }))
-}
-
-function buildCuesToSrt(cues: BuildCue[]): SrtCue[] {
-  return cues
-    .filter((c) => c.text.trim())
-    .map((c, i) => ({
-      index: i + 1,
-      startMs: c.startMs,
-      endMs: Math.max(c.endMs, c.startMs + 100),
-      text: c.text.trim(),
-    }))
-}
-
-function BuildTab({
-  waveformPeaks, audioSrc, audioDuration, onAutoSave, onApply, initialCues,
-}: {
-  waveformPeaks: number[]
-  audioSrc: string | null
-  audioDuration: number
-  onAutoSave: (cues: SrtCue[]) => void
-  onApply: (cues: SrtCue[]) => void
-  initialCues?: SrtCue[]
-}) {
-  const initBuild = initialCues?.length ? cuesFromSrt(initialCues) : [newCueAfter()]
-  const [cues, setCues] = useState<BuildCue[]>(initBuild)
-  const [focusedId, setFocusedId] = useState<string>(initBuild[0].id)
-  const [currentMs, setCurrentMs] = useState(0)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const animRef = useRef<number | null>(null)
-  const textRefs = useRef<Map<string, HTMLInputElement>>(new Map())
-
-  const duration = audioDuration > 0 ? audioDuration : 0
-  const progress = duration > 0 ? currentMs / (duration * 1000) : 0
-
-  const syncTime = useCallback(() => {
-    const el = audioRef.current
-    if (!el) return
-    setCurrentMs(el.currentTime * 1000)
-    animRef.current = requestAnimationFrame(syncTime)
-  }, [])
-
-  const seek = (ratio: number) => {
-    const el = audioRef.current
-    if (!el || duration === 0) return
-    el.currentTime = ratio * duration
-    setCurrentMs(ratio * duration * 1000)
-  }
-
-  const togglePlay = useCallback(() => {
-    const el = audioRef.current
-    if (!el) return
-    if (el.paused) {
-      void el.play(); setIsPlaying(true)
-      animRef.current = requestAnimationFrame(syncTime)
-    } else {
-      el.pause(); setIsPlaying(false)
-      if (animRef.current) cancelAnimationFrame(animRef.current)
-    }
-  }, [syncTime])
-
-  useEffect(() => () => { if (animRef.current) cancelAnimationFrame(animRef.current) }, [])
-
-  const onAutoSaveRef = useRef(onAutoSave)
-  useEffect(() => { onAutoSaveRef.current = onAutoSave }, [onAutoSave])
-  const isFirstRender = useRef(true)
-  useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return }
-    const valid = buildCuesToSrt(cues)
-    if (valid.length === 0) return
-    const timer = setTimeout(() => onAutoSaveRef.current(valid), 400)
-    return () => clearTimeout(timer)
-  }, [cues])
-
-  const markStart = useCallback(() => {
-    setCues((prev) => prev.map((c) => c.id === focusedId ? { ...c, startMs: currentMs } : c))
-  }, [focusedId, currentMs])
-
-  const markEnd = useCallback(() => {
-    setCues((prev) => {
-      const idx = prev.findIndex((c) => c.id === focusedId)
-      if (idx === -1) return prev
-      return prev.map((c, i) => i === idx ? { ...c, endMs: currentMs } : c)
-    })
-  }, [focusedId, currentMs])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const t = e.target as Element
-      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return
-      if (e.key === '[') { e.preventDefault(); markStart() }
-      if (e.key === ']') { e.preventDefault(); markEnd() }
-      if (e.key === ' ') { e.preventDefault(); togglePlay() }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [markStart, markEnd, togglePlay])
-
-  const addCue = useCallback((afterId?: string) => {
-    setCues((prev) => {
-      const idx = afterId ? prev.findIndex((c) => c.id === afterId) : prev.length - 1
-      const next = newCueAfter(prev[idx])
-      const result = [...prev]
-      result.splice(idx + 1, 0, next)
-      setTimeout(() => { setFocusedId(next.id); textRefs.current.get(next.id)?.focus() }, 0)
-      return result
-    })
-  }, [])
-
-  const removeCue = (id: string) => {
-    setCues((prev) => {
-      const next = prev.filter((c) => c.id !== id)
-      if (next.length === 0) {
-        const fresh = newCueAfter(); setFocusedId(fresh.id); return [fresh]
-      }
-      if (focusedId === id) setFocusedId(next[Math.max(0, prev.findIndex((c) => c.id === id) - 1)].id)
-      return next
-    })
-  }
-
-  const updateCue = (id: string, patch: Partial<BuildCue>) => {
-    setCues((prev) => prev.map((c) => c.id === id ? { ...c, ...patch } : c))
-  }
-
-  const handleTextEnter = useCallback((cueId: string) => {
-    setCues((prev) => {
-      const idx = prev.findIndex((c) => c.id === cueId)
-      if (idx === -1) return prev
-      const endMs = isPlaying ? currentMs : prev[idx].endMs
-      const updated = prev.map((c, i) => i === idx ? { ...c, endMs } : c)
-      const next = newCueAfter(updated[idx])
-      const result = [...updated]
-      result.splice(idx + 1, 0, next)
-      setTimeout(() => { setFocusedId(next.id); textRefs.current.get(next.id)?.focus() }, 0)
-      return result
-    })
-  }, [isPlaying, currentMs])
-
-  const focusedCue = cues.find((c) => c.id === focusedId)
-
-  return (
-    <div className="srt-build-tab">
-      {audioSrc && (
-        <audio ref={audioRef} src={audioSrc}
-          onEnded={() => { setIsPlaying(false); if (animRef.current) cancelAnimationFrame(animRef.current) }}
-        />
-      )}
-
-      <div className="srt-time-hero">
-        <div className="srt-time-hero-clock">{msToDisplay(currentMs)}</div>
-        {duration > 0 && <div className="srt-time-hero-total">/ {msToDisplay(duration * 1000)}</div>}
-      </div>
-
-      {audioSrc ? (
-        <div className="srt-waveform-wrap">
-          <div className="srt-waveform" onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect()
-            seek((e.clientX - rect.left) / rect.width)
-          }}>
-            <div className="srt-waveform-bars">
-              {waveformPeaks.map((peak, i) => (
-                <span key={i} style={{
-                  height: `${Math.max(6, peak * 56)}px`,
-                  opacity: i / waveformPeaks.length <= progress ? 1 : 0.22,
-                }} />
-              ))}
-            </div>
-            {duration > 0 && cues.map((c) => (
-              <span key={c.id}>
-                {c.startMs > 0 && (
-                  <i className={`srt-wv-tick srt-wv-tick--start${c.id === focusedId ? ' focused' : ''}`}
-                    style={{ left: `${(c.startMs / (duration * 1000)) * 100}%` }} />
-                )}
-                <i className={`srt-wv-tick srt-wv-tick--end${c.id === focusedId ? ' focused' : ''}`}
-                  style={{ left: `${(c.endMs / (duration * 1000)) * 100}%` }} />
-              </span>
-            ))}
-            <i className="srt-playhead" style={{ left: `${progress * 100}%` }} />
-          </div>
-        </div>
-      ) : (
-        <div className="srt-no-audio">
-          <p>Load an audio track in the editor to enable the waveform scrubber.</p>
-        </div>
-      )}
-
-      <div className="srt-transport">
-        <button type="button" className="srt-play-btn" onClick={togglePlay} disabled={!audioSrc}
-          aria-label={isPlaying ? 'Pause' : 'Play'}>
-          {isPlaying ? '⏸' : '▶'}
-        </button>
-        <div className="srt-mark-btns">
-          <button type="button" className="srt-mark-btn" onClick={markStart} disabled={!audioSrc}
-            title="Stamp current time as start  ( [ )">[ Mark Start</button>
-          <button type="button" className="srt-mark-btn" onClick={markEnd} disabled={!audioSrc}
-            title="Stamp current time as end  ( ] )">Mark End ]</button>
-        </div>
-        {focusedCue && (
-          <span className="srt-focused-range">
-            {msToDisplay(focusedCue.startMs)} → {msToDisplay(focusedCue.endMs)}
-          </span>
-        )}
-      </div>
-
-      <div className="srt-cue-list">
-        <div className="srt-cue-list-header">
-          <span>#</span><span>Start</span><span>End</span><span>Text</span><span />
-        </div>
-        <div className="srt-cue-rows">
-          {cues.map((cue, idx) => (
-            <div key={cue.id}
-              className={`srt-cue-row${cue.id === focusedId ? ' focused' : ''}`}
-              onClick={() => setFocusedId(cue.id)}
-            >
-              <span className="srt-cue-num">{idx + 1}</span>
-              <DragTimeInput ms={cue.startMs} onChangeMs={(v) => updateCue(cue.id, { startMs: v })}
-                className="srt-cue-time" onFocus={() => setFocusedId(cue.id)} />
-              <DragTimeInput ms={cue.endMs} onChangeMs={(v) => updateCue(cue.id, { endMs: v })}
-                className="srt-cue-time" onFocus={() => setFocusedId(cue.id)} />
-              <input
-                ref={(el) => { el ? textRefs.current.set(cue.id, el) : textRefs.current.delete(cue.id) }}
-                className="srt-cue-text" placeholder="Type line…"
-                value={cue.text}
-                onChange={(e) => updateCue(cue.id, { text: e.target.value })}
-                onFocus={() => setFocusedId(cue.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); handleTextEnter(cue.id) }
-                  if (e.key === 'Backspace' && cue.text === '' && cues.length > 1) {
-                    e.preventDefault(); removeCue(cue.id)
-                  }
-                }}
-              />
-              <button type="button" className="srt-cue-del"
-                onClick={(e) => { e.stopPropagation(); removeCue(cue.id) }}
-                aria-label="Delete cue">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="srt-tab-actions srt-tab-actions--split">
-        <button type="button" className="srt-secondary-btn" onClick={() => addCue()}>
-          <Plus size={13} /> Add Line
-        </button>
-        <button type="button" className="srt-add-btn" onClick={() => onApply(buildCuesToSrt(cues))}>
           Apply
         </button>
       </div>
@@ -825,7 +560,6 @@ function StyleTab({ layer, onUpdate }: { layer: LayerInstance; onUpdate: (patch:
 const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: 'lyrics', label: 'Lyrics',  icon: Mic2      },
   { id: 'import', label: 'SRT',     icon: FileText  },
-  { id: 'build',  label: 'Build',   icon: AlignLeft },
   { id: 'ai',     label: 'AI',      icon: Bot       },
   { id: 'style',  label: 'Style',   icon: Palette   },
 ]
@@ -835,7 +569,7 @@ export function SubtitleModal({
   waveformPeaks, audioSrc, audioDuration,
 }: Props) {
   const initialCues = (editingLayer.settings.cues ?? []) as SrtCue[]
-  const defaultTab: TabId = initialCues.length > 0 ? 'build' : 'lyrics'
+  const defaultTab: TabId = 'lyrics'
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab)
   const [applying, setApplying] = useState(false)
 
@@ -849,9 +583,6 @@ export function SubtitleModal({
     initialCues.length ? srtToLyrics(initialCues) : '',
   )
 
-  // Incrementing this key remounts BuildTab so it re-seeds from updated cues.
-  const [buildVersion, setBuildVersion] = useState(0)
-
   // ── Apply handler ───────────────────────────────────────────────────────
   // source:
   //   'lyrics' — don't rewrite rawLyrics (preserve user's text), reset Build
@@ -859,13 +590,12 @@ export function SubtitleModal({
   //   'build'  — regenerate rawLyrics from new cues, don't reset Build
   const handleApply = useCallback((
     next: SrtCue[],
-    source: 'lyrics' | 'srt' | 'build',
+    source: 'lyrics' | 'srt',
   ) => {
     setCues(next)
     setSavedCues(next)
     onSave(next)
     if (source !== 'lyrics') setRawLyrics(srtToLyrics(next))
-    if (source !== 'build')  setBuildVersion((v) => v + 1)
   }, [onSave])
 
   // persistCues is for Build's auto-save: keeps cues in sync without
@@ -935,17 +665,6 @@ export function SubtitleModal({
               savedCues={savedCues}
               onCuesChange={handleCuesChange}
               onApply={(next) => withFlash(() => handleApply(next, 'srt'))}
-            />
-          )}
-          {activeTab === 'build' && (
-            <BuildTab
-              key={buildVersion}
-              waveformPeaks={waveformPeaks}
-              audioSrc={audioSrc}
-              audioDuration={audioDuration}
-              onAutoSave={persistCues}
-              onApply={(next) => handleApply(next, 'build')}
-              initialCues={cues.length > 0 ? cues : undefined}
             />
           )}
           {activeTab === 'ai' && (

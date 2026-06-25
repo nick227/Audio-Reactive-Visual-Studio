@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import type { UserConfig } from 'vitest/config'
 
 // Cross-Origin Isolation is required for:
 //   - SharedArrayBuffer  (ffmpeg.wasm multi-threaded encoding)
@@ -13,6 +14,10 @@ const isolationHeaders = {
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  } satisfies UserConfig['test'],
   server: {
     port: 5173,
     strictPort: true,

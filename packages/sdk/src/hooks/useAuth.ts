@@ -30,6 +30,34 @@ export function useGoogleAuth() {
   })
 }
 
+export function useEmailRegister() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: { email: string; password: string; displayName: string }) => {
+      const { data, error, response } = await getApiClient().POST('/auth/register', { body })
+      if (error) throw new ApiError(response.status, (error as any).error)
+      return data!
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['me'] })
+    },
+  })
+}
+
+export function useEmailLogin() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: { email: string; password: string; remember: boolean }) => {
+      const { data, error, response } = await getApiClient().POST('/auth/login', { body })
+      if (error) throw new ApiError(response.status, (error as any).error)
+      return data!
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['me'] })
+    },
+  })
+}
+
 export function useLogout() {
   const queryClient = useQueryClient()
   return useMutation({

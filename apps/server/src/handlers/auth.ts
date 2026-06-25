@@ -1,8 +1,10 @@
 import { GoogleAuthService } from '../services/GoogleAuthService'
+import { PasswordAuthService } from '../services/PasswordAuthService'
 import { PasswordResetService } from '../services/PasswordResetService'
 import { EmailService } from '../services/EmailService'
 
 const googleAuthService = new GoogleAuthService()
+const passwordAuthService = new PasswordAuthService()
 const passwordResetService = new PasswordResetService()
 const emailService = new EmailService()
 
@@ -12,6 +14,21 @@ const COOKIE = {
   sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
   path: '/',
   maxAge: 30 * 24 * 60 * 60,
+}
+
+export async function emailRegister(request: any, reply: any) {
+  const { email, password, displayName } = request.body as { email: string; password: string; displayName: string }
+  const { user, token } = await passwordAuthService.register(email, password, displayName)
+  reply.setCookie('token', token, COOKIE)
+  return reply.status(201).send({ data: toUserDto(user) })
+}
+
+export async function emailLogin(request: any, reply: any) {
+  const { email, password, remember } = request.body as { email: string; password: string; remember?: boolean }
+  const { user, token } = await passwordAuthService.login(email, password)
+  const cookieOpts = remember === false ? { ...COOKIE, maxAge: undefined } : COOKIE
+  reply.setCookie('token', token, cookieOpts)
+  return reply.send({ data: toUserDto(user) })
 }
 
 export async function googleAuth(request: any, reply: any) {

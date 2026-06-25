@@ -1,26 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle, Download, Image, Loader2, Video, X } from 'lucide-react'
+import { Download, Image, Loader2, Video, X } from 'lucide-react'
 import { exportFileBase } from '../export/exportTitle'
+import { EXPORT_PRESETS, DEFAULT_PRESET_ID, getPreset, type ExportPreset, type PresetId } from '../export/presets'
+import type { RendererDiagnostics } from '../export/rendererSupport'
+import type { FrameStats } from '../export/webcodecs'
 
 type Props = {
   hasAudio: boolean
   suggestedTitle: string
   isExportingPng: boolean
+  isPreparing: boolean
+  preparePhase: string
+  prepareProgress: number
   isExportingVideo: boolean
   videoProgress: number
+  rendererMode: 'native' | 'compat'
+  rendererDiagnostics: RendererDiagnostics | null
+  hasAudioEncoder: boolean
+  exportStats: FrameStats | null
   onExportPng: (title: string) => void
-  onExportWebm: (title: string) => void
+  onExportWebm: (title: string, preset: ExportPreset) => void
   onCancelVideo: () => void
+  lastExport: { filename: string; mimeType: string } | null
+  onDownloadLastExport: () => void
+  onClearLastExport: () => void
   onClose: () => void
 }
 
 type Diagnostics = {
+  webCodecs: boolean
+  audioEncoder: boolean
   mediaRecorder: boolean
   mrCodec: string
-  videoEncoder: boolean
   captureStream: boolean
-  crossOriginIsolated: boolean
-  sharedArrayBuffer: boolean
 }
 
 function getDiagnostics(): Diagnostics {
@@ -31,28 +43,60 @@ function getDiagnostics(): Diagnostics {
       ) ?? 'none')
     : 'unavailable'
   return {
+    webCodecs: typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined',
+    audioEncoder: typeof AudioEncoder !== 'undefined' && typeof AudioData !== 'undefined',
     mediaRecorder: hasMR,
     mrCodec,
-    videoEncoder: 'VideoEncoder' in window,
     captureStream: typeof HTMLCanvasElement !== 'undefined' && 'captureStream' in HTMLCanvasElement.prototype,
-    crossOriginIsolated: window.crossOriginIsolated ?? false,
-    sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
   }
 }
 
-export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isExportingVideo, videoProgress, onExportPng, onExportWebm, onCancelVideo, onClose }: Props) {
+export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPreparing, preparePhase, prepareProgress, isExportingVideo, videoProgress, rendererMode, rendererDiagnostics, hasAudioEncoder, exportStats, onExportPng, onExportWebm, onCancelVideo, lastExport, onDownloadLastExport, onClearLastExport, onClose }: Props) {
   const diag = useMemo(() => getDiagnostics(), [])
-  const canWebm = diag.mediaRecorder && diag.mrCodec !== 'none' && diag.mrCodec !== 'unavailable' && diag.captureStream
-  const busy = isExportingPng || isExportingVideo
-  const locked = isExportingVideo
+  const canWebCodecs = diag.webCodecs
+  const canAudio = canWebCodecs ? diag.audioEncoder : true
+  const canMediaRecorder = diag.mediaRecorder && diag.mrCodec !== 'none' && diag.mrCodec !== 'unavailable' && diag.captureStream
+  const canWebm = canWebCodecs || canMediaRecorder
+  const exportEngine = canWebCodecs ? 'WebCodecs' : 'MediaRecorder'
+  const exportEngineDetail = canWebCodecs
+    ? diag.audioEncoder
+      ? 'VP9 + Opus · frame-accurate'
+      : 'VP9 · frame-accurate · video only'
+    : canMediaRecorder
+      ? `${diag.mrCodec.replace('video/', '')} · canvas + audio`
+      : 'Not available'
+  // VP9 is the default codec. AV1 is not enabled by default due to slow software encoding.
+  const busy = isExportingPng || isPreparing || isExportingVideo
+  const locked = isPreparing || isExportingVideo
   const [webmConfirmOpen, setWebmConfirmOpen] = useState(false)
   const [title, setTitle] = useState(suggestedTitle)
+  const [presetId, setPresetId] = useState<PresetId>(() => {
+    const stored = localStorage.getItem('avl-export-preset-id')
+    return (stored === 'draft' || stored === 'standard' || stored === 'high' || stored === 'smooth')
+      ? stored
+      : DEFAULT_PRESET_ID
+  })
 
   useEffect(() => {
     setTitle(suggestedTitle)
   }, [suggestedTitle])
 
+  useEffect(() => {
+    localStorage.setItem('avl-export-preset-id', presetId)
+  }, [presetId])
+
+  const preset = getPreset(presetId)
   const fileBase = exportFileBase(title)
+
+  const rendererLabel = rendererMode === 'native' ? 'Canvas native' : 'html2canvas compat'
+  const videoCodecLabel = !canWebCodecs ? 'MediaRecorder' : 'VP9'
+  const audioCodecLabel = !canWebCodecs
+    ? 'Captured'
+    : hasAudio && hasAudioEncoder
+      ? 'Opus 192k'
+      : hasAudio
+        ? 'None'
+        : '—'
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget || locked) return
@@ -67,17 +111,17 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isExport
 
   const startWebmExport = () => {
     setWebmConfirmOpen(false)
-    onExportWebm(title.trim() || suggestedTitle)
+    onExportWebm(title.trim() || suggestedTitle, preset)
   }
 
-  if (isExportingVideo) {
-    const pct = Math.round(videoProgress * 100)
+  if (isPreparing) {
+    const pct = Math.round(prepareProgress * 100)
     return (
       <div className="modal-backdrop modal-backdrop--locked" onClick={handleBackdropClick}>
         <div className="export-panel export-panel--compiling">
           <div className="export-compile-header">
             <Loader2 size={18} className="export-compile-spinner" />
-            <span>Compiling video…</span>
+            <span>Preparing export · {preset.label}…</span>
           </div>
           <div className="export-progress-wrap export-progress-wrap--compile">
             <div className="export-progress-bar">
@@ -85,6 +129,35 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isExport
             </div>
             <span className="export-progress-pct">{pct}%</span>
           </div>
+          {preparePhase && <p className="export-compile-note">{preparePhase}</p>}
+          <button className="export-cancel-btn export-cancel-btn--compile" onClick={onCancelVideo}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
+
+  if (isExportingVideo) {
+    const pct = Math.round(videoProgress * 100)
+    const etaLabel = exportStats && exportStats.etaSec > 0
+      ? `ETA ${exportStats.etaSec < 60 ? `${exportStats.etaSec}s` : `${Math.ceil(exportStats.etaSec / 60)}m`}`
+      : ''
+    const frameLabel = exportStats
+      ? `${exportStats.frame}/${exportStats.totalFrames} · ${exportStats.msPerFrame.toFixed(0)} ms/f`
+      : ''
+    return (
+      <div className="modal-backdrop modal-backdrop--locked" onClick={handleBackdropClick}>
+        <div className="export-panel export-panel--compiling">
+          <div className="export-compile-header">
+            <Loader2 size={18} className="export-compile-spinner" />
+            <span>Compiling · {preset.label} · {videoCodecLabel} · {rendererLabel}…</span>
+          </div>
+          <div className="export-progress-wrap export-progress-wrap--compile">
+            <div className="export-progress-bar">
+              <div style={{ width: `${pct}%` }} />
+            </div>
+            <span className="export-progress-pct">{pct}%{etaLabel ? ` · ${etaLabel}` : ''}</span>
+          </div>
+          {frameLabel && <p className="export-compile-note">{frameLabel}</p>}
           <button className="export-cancel-btn export-cancel-btn--compile" onClick={onCancelVideo}>Cancel compile</button>
         </div>
       </div>
@@ -100,12 +173,44 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isExport
             <button onClick={() => setWebmConfirmOpen(false)}><X size={15} /></button>
           </div>
           <div className="export-confirm">
-            <p>Your canvas will be compiled with audio.</p>
+            <div className="export-preset-row">
+              {EXPORT_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  className={`export-preset-btn${p.id === presetId ? ' export-preset-btn--active' : ''}`}
+                  onClick={() => setPresetId(p.id)}
+                >
+                  {p.label}
+                  <span>{p.fps}fps</span>
+                </button>
+              ))}
+            </div>
+            <p className="export-preset-desc">{preset.description}</p>
+            <dl className="export-tech-table">
+              <dt>Renderer</dt><dd>{rendererLabel}</dd>
+              <dt>Video</dt>  <dd>{videoCodecLabel}</dd>
+              <dt>Audio</dt>  <dd>{audioCodecLabel}</dd>
+              {rendererDiagnostics && (
+                <>
+                  <dt>Layers</dt>
+                  <dd>{rendererDiagnostics.supportedLayers}/{rendererDiagnostics.totalLayers} supported natively</dd>
+                  {rendererDiagnostics.fallbackReason && (
+                    <>
+                      <dt>Fallback</dt>
+                      <dd className="export-tech-fallback">{rendererDiagnostics.fallbackReason}</dd>
+                    </>
+                  )}
+                </>
+              )}
+            </dl>
             <p className="export-confirm-filename">{fileBase}.webm</p>
             <ul>
               <li>Edits made after you confirm will not appear in the export</li>
               <li>Keep this dialog open until the download starts</li>
-              <li>Compile time matches your audio length</li>
+              {canWebCodecs
+                ? <li>Export is offline — may take longer than playback time</li>
+                : <li>Compile time matches your audio length</li>
+              }
             </ul>
             <div className="export-confirm-actions">
               <button className="export-confirm-back" onClick={() => setWebmConfirmOpen(false)}>Back</button>
@@ -154,27 +259,30 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isExport
             className="export-btn"
             onClick={() => setWebmConfirmOpen(true)}
             disabled={!canWebm || !hasAudio || busy}
-            title={!canWebm ? 'MediaRecorder unavailable in this browser' : !hasAudio ? 'Upload audio first' : undefined}
+            title={!canWebm ? 'Video export unavailable in this browser' : !hasAudio ? 'Upload audio first' : undefined}
           >
             <Video size={16} />
             <div>
-              <strong>Video + Audio (WebM)</strong>
-              <span>{canWebm ? `${diag.mrCodec.replace('video/', '')} · canvas + audio` : 'Not available'}</span>
+              <strong>Video (WebM)</strong>
+              <span>{exportEngineDetail}</span>
             </div>
             <Download size={13} />
           </button>
         </div>
+
+        {lastExport && (
+          <div className="export-last">
+            <button className="export-btn export-btn--redownload" onClick={onDownloadLastExport} disabled={busy}>
+              <Download size={14} />
+              <div>
+                <strong>Re-download</strong>
+                <span>{lastExport.filename}</span>
+              </div>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function DiagRow({ ok, label, note }: { ok: boolean; label: string; note?: string }) {
-  return (
-    <div className="export-diag-row">
-      {ok ? <CheckCircle size={11} className="diag-ok" /> : <AlertCircle size={11} className="diag-warn" />}
-      <span>{label}</span>
-      {note && <em>{note}</em>}
-    </div>
-  )
-}

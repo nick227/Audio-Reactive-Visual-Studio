@@ -2,7 +2,7 @@
 .layers-header {
   display: flex; align-items: center; gap: 6px;
   justify-content: flex-end;
-  padding: 14px 2px;
+  padding: 2px;
 }
 .layers-add-btn {
   display: inline-flex; align-items: center; gap: 5px;

@@ -11,7 +11,7 @@
 }
 .site-topbar-inner {
   height: 100%;
-  max-width: 1600px;
+  max-width: var(--width-main);
   margin: 0 auto;
   padding: 0 14px;
   display: flex;
@@ -70,7 +70,7 @@
 
 /* ── Shell ── */
 .app-shell { min-height: 100vh; }
-.editor-body { max-width: 100%; width: 1216px; margin: 0 auto; padding: 14px 14px 40px; display: grid; gap: 8px; }
+.editor-body { max-width: 100%; width: var(--width-main); margin: 0 auto; padding: 14px 14px 40px; display: grid; gap: 8px; }
 .editor-body.film-screen { width: 1600px; }
 .editor-body.full-screen { width: 100%; }
 

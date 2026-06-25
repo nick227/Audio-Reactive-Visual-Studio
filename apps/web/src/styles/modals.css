@@ -1,6 +1,6 @@
 /* ── Shared modal chrome ── */
-.modal-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); }
-.modal-backdrop--locked { background: rgba(0,0,0,.45); backdrop-filter: blur(var(--blur-sm)); pointer-events: all; }
+.modal-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: end; padding: 20px; }
+.modal-backdrop--locked { pointer-events: all; }
 .modal-close-btn {
   width: 32px; height: 32px; border-radius: var(--radius-full);
   display: grid; place-items: center;

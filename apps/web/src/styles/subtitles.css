@@ -1,20 +1,28 @@
 /* ── Subtitle layer on stage ── */
 
 /* Subtitle host is transparent to pointer events — its 100%×100% hit area
-   would swallow all clicks to layers below. Only the subtitle text itself is clickable. */
+   would swallow all clicks to layers below. Only the subtitle cue itself is clickable. */
 .stage-layer.subtitle-host { pointer-events: none; }
-.stage-layer.subtitle-host .subtitle-layer { pointer-events: auto; cursor: grab; }
-.stage-layer.subtitle-host .subtitle-layer:active { cursor: grabbing; }
+.stage-layer.subtitle-host .subtitle-cue { pointer-events: auto; cursor: grab; }
+.stage-layer.subtitle-host .subtitle-cue:active { cursor: grabbing; }
 
 .subtitle-layer {
   position: absolute;
-  bottom: 0; left: 0; right: 0;
-  padding: 8px 32px 22px;
+  inset: 0;
+  padding: 0 32px;
   text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  display: flex; flex-direction: column; align-items: center;
   pointer-events: none;
-  animation: subtitle-enter 80ms ease-out both;
   will-change: contents;
+}
+
+.subtitle-pos-bottom { justify-content: flex-end; padding-bottom: 22px; }
+.subtitle-pos-middle { justify-content: center; }
+.subtitle-pos-top    { justify-content: flex-start; padding-top: 22px; }
+
+.subtitle-cue {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  animation: subtitle-enter 80ms ease-out both;
 }
 
 .subtitle-line {
@@ -90,15 +98,15 @@
 
 /* ── Subtitle modal ── */
 .srt-modal {
-  width: 940px; max-width: calc(100vw - 32px);
-  padding: 6px 8px;
-  background: black;
+  width: 444px; max-width: 100%;
+  padding: 18px;
+  background: var(--bg-deep);
+  border-radius: var(--radius-2xl);
 }
 .srt-modal-body {
   position: relative; overflow-y: auto;
-  height: 500px; max-height: calc(100vh - 160px);
-  padding: 16px 18px;
-  background: black;
+  padding: 8px;
+  height: 90vh; max-height: 80vh;
 }
 .srt-tab-panel { height: 100%; }
 
@@ -114,7 +122,7 @@
 .srt-import-tab { display: grid; gap: 14px; }
 
 .srt-dropzone {
-  min-height: 460px; border-radius: 14px;
+  min-height: 300px; border-radius: 14px;
   border: 2px dashed rgba(255,255,255,.14);
   display: grid; place-items: center;
   cursor: pointer; transition: border-color .15s, background .15s;
@@ -163,7 +171,7 @@
 .srt-lyrics-tab { display: grid; gap: 12px; }
 .srt-lyrics-hint { margin: 0; font-size: 11px; color: var(--text-muted); line-height: 1.45; }
 .srt-lyrics-input {
-  width: 100%; min-height: 340px; resize: vertical;
+  width: 100%; min-height: 300px; resize: vertical;
   padding: 12px 14px; border-radius: 10px;
   border: 1px solid var(--border-base);
   background: rgba(0,0,0,.28); color: #fff;
@@ -208,91 +216,6 @@
 }
 .srt-source-input:focus { outline: none; border-color: rgba(140,108,255,.4); }
 .srt-source-input[readonly] { cursor: default; color: var(--text-mid); }
-
-/* ── Build tab ── */
-.srt-build-tab { display: grid; gap: 12px; }
-
-.srt-no-audio {
-  border-radius: 10px; background: var(--white-4);
-  border: 1px solid var(--border-dim);
-  padding: 14px 18px;
-}
-.srt-no-audio p { margin: 0; font-size: 12px; color: rgba(255,255,255,.45); }
-
-.srt-waveform-wrap { border-radius: 10px; overflow: hidden; background: rgba(0,0,0,.3); padding: 8px 10px; }
-.srt-waveform {
-  position: relative; height: 60px; cursor: pointer;
-  display: flex; align-items: flex-end; gap: 1px; overflow: hidden;
-}
-.srt-waveform-bars { display: flex; align-items: flex-end; gap: 1px; width: 100%; height: 100%; }
-.srt-waveform-bars span { flex: 1; border-radius: 2px 2px 0 0; background: rgba(120,88,255,.75); min-height: 6px; transition: opacity .1s; }
-
-.srt-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; border-radius: 2px; pointer-events: none; }
-.srt-wv-tick { position: absolute; top: 0; bottom: 0; width: 1px; pointer-events: none; }
-.srt-wv-tick--start { background: rgba(61,255,136,.5); }
-.srt-wv-tick--end { background: rgba(255,180,60,.5); }
-.srt-wv-tick.focused { opacity: 1; width: 2px; }
-.srt-wv-tick--start.focused { background: var(--success); }
-.srt-wv-tick--end.focused { background: #ffb43c; }
-
-.srt-transport {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
-.srt-play-btn {
-  width: 30px; height: 30px; border-radius: var(--radius-md);
-  background: var(--white-10); color: #fff; font-size: 14px;
-  display: grid; place-items: center; flex-shrink: 0;
-}
-.srt-play-btn:hover { background: rgba(255,255,255,.2); }
-.srt-time-display { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; min-width: 52px; }
-.srt-mark-btns { display: flex; gap: 5px; }
-.srt-mark-btn {
-  height: 26px; padding: 0 10px; border-radius: 7px;
-  background: var(--white-8); color: var(--text-secondary); font-size: 11px; font-weight: 600;
-  border: 1px solid var(--border-muted);
-}
-.srt-mark-btn:hover:not(:disabled) { background: var(--white-14); color: #fff; }
-
-.srt-focused-range {
-  font-size: 11px; color: var(--text-muted); margin-left: auto;
-  font-variant-numeric: tabular-nums; letter-spacing: .01em;
-}
-.srt-cue-count {
-  font-size: 11px; color: var(--text-ghost); margin-right: auto;
-  font-variant-numeric: tabular-nums;
-}
-
-.srt-cue-list { display: grid; gap: 6px; }
-.srt-cue-list-header {
-  display: grid;
-  grid-template-columns: 22px 64px 64px 1fr 22px;
-  gap: 6px; padding: 0 4px;
-  font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-  color: var(--text-ghost);
-}
-.srt-cue-rows { display: grid; gap: 4px; max-height: 400px; overflow-y: auto; padding-right: 4px; }
-.srt-cue-row {
-  display: grid;
-  grid-template-columns: 22px 64px 64px 1fr 22px;
-  gap: 6px; align-items: center;
-  padding: 5px 4px; border-radius: var(--radius-md);
-  background: var(--white-4);
-  border: 1px solid transparent;
-  cursor: pointer;
-}
-.srt-time-hero-clock {
-  font-size: 42px; font-weight: 800; letter-spacing: -.04em;
-  font-variant-numeric: tabular-nums;
-  background: linear-gradient(135deg, var(--purple-light) 0%, #7858ff 100%);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-  line-height: 1;
-  filter: drop-shadow(0 0 18px var(--purple-glow));
-}
-.srt-time-hero-total {
-  font-size: 16px; color: var(--text-ghost); font-variant-numeric: tabular-nums;
-  font-weight: 500; letter-spacing: .01em;
-}
 
 /* ── Style tab ── */
 .srt-style-tab { display: grid; gap: 22px; padding: 6px 0; }

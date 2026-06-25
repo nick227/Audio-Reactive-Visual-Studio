@@ -5,13 +5,26 @@ import { SITE_NAME } from '../brand/site'
 interface Props {
   onSaveToCloud?: () => void
   isSaving?: boolean
-  cloudProjectId?: string | null
+  lastCloudSaved?: string | null
+  localSavedAt?: string | null
 }
 
-export function SiteTopBar({ onSaveToCloud, isSaving, cloudProjectId }: Props) {
+function cloudBtnLabel(isSaving: boolean, lastCloudSaved: string | null | undefined): string {
+  if (isSaving) return 'Saving…'
+  if (lastCloudSaved) {
+    const secAgo = (Date.now() - new Date(lastCloudSaved).getTime()) / 1000
+    if (secAgo < 60) return 'Synced ✓'
+  }
+  return 'Save to Cloud'
+}
+
+export function SiteTopBar({ onSaveToCloud, isSaving = false, lastCloudSaved, localSavedAt }: Props) {
   const navigate = useNavigate()
   const { data: me, isLoading } = useCurrentUser()
   const user = me?.data
+
+  const showLocal = Boolean(localSavedAt)
+  const cloudLabel = cloudBtnLabel(isSaving, lastCloudSaved)
 
   return (
     <header className="site-topbar">
@@ -20,33 +33,36 @@ export function SiteTopBar({ onSaveToCloud, isSaving, cloudProjectId }: Props) {
           <span className="site-name">{SITE_NAME}</span>
         </a>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: 'auto' }}>
+        <div style={styles.right}>
+          {showLocal && (
+            <span style={styles.savedLocal} title="Autosaved to this browser">
+              <span style={styles.dot} aria-hidden>●</span>
+              Saved locally
+            </span>
+          )}
+
           {!isLoading && !user && (
             <>
-              <button
-                className="topbar-btn topbar-btn--ghost"
-                onClick={() => navigate('/login')}
-              >
+              <button className="topbar-btn topbar-btn--ghost" onClick={() => navigate('/login')}>
                 Sign in
               </button>
-              <button
-                className="topbar-btn topbar-btn--primary"
-                onClick={() => navigate('/register')}
-              >
+              <button className="topbar-btn topbar-btn--primary" onClick={() => navigate('/login')}>
                 Get started
               </button>
             </>
           )}
 
           {user && onSaveToCloud && (
-            <button
-              className="topbar-btn topbar-btn--primary"
+            <>
+            | <a
+              className="topbar-link"
+              style={styles.savedLocal}
               onClick={onSaveToCloud}
-              disabled={isSaving}
-              title={cloudProjectId ? 'Save changes to cloud' : 'Save project to cloud'}
+              title="Save project structure to cloud (files stay local until Phase 2)"
             >
-              {isSaving ? 'Saving…' : cloudProjectId ? 'Saved ✓' : 'Save to Cloud'}
-            </button>
+            {cloudLabel}
+            </a>
+            </>
           )}
 
           {user && (
@@ -81,4 +97,26 @@ export function SiteTopBar({ onSaveToCloud, isSaving, cloudProjectId }: Props) {
       </div>
     </header>
   )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  right: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    marginLeft: 'auto',
+  },
+  savedLocal: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    fontSize: '0.75rem',
+    color: 'var(--text-ghost)',
+    userSelect: 'none',
+  },
+  dot: {
+    fontSize: '0.5rem',
+    color: 'var(--green, #4ade80)',
+    lineHeight: 1,
+  },
 }
