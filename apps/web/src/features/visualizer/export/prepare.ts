@@ -47,6 +47,8 @@ export interface ExportRenderContext {
   readonly audioAnalysis: AudioAnalysisResult | null
   readonly fps: number
   readonly durationMs: number
+  readonly sourceDisplayWidth: number
+  readonly sourceDisplayHeight: number
 }
 
 export interface ExportManifest extends ExportRenderContext {
@@ -69,6 +71,8 @@ export interface PrepareOptions {
   preset: ExportPreset
   outputWidth: number
   outputHeight: number
+  sourceDisplayWidth: number
+  sourceDisplayHeight: number
   signal: AbortSignal
   /**
    * html2canvas compatibility renderer — always provided.
@@ -165,7 +169,18 @@ async function preflightLayer(
 const REHEARSAL_POINTS = [0.05, 0.50, 0.95] as const
 
 export async function prepareExport(opts: PrepareOptions): Promise<ExportManifest> {
-  const { snapshot, preset, outputWidth, outputHeight, signal, rehearseCompat, rehearseNative, onProgress } = opts
+  const {
+    snapshot,
+    preset,
+    outputWidth,
+    outputHeight,
+    sourceDisplayWidth,
+    sourceDisplayHeight,
+    signal,
+    rehearseCompat,
+    rehearseNative,
+    onProgress,
+  } = opts
   const durationMs = (snapshot.audio?.duration ?? 0) * 1000
 
   // 1 ── Validate ────────────────────────────────────────────────────────────
@@ -227,6 +242,8 @@ export async function prepareExport(opts: PrepareOptions): Promise<ExportManifes
     audioAnalysis: null,
     fps: preset.fps,
     durationMs,
+    sourceDisplayWidth,
+    sourceDisplayHeight,
   }
 
   // 4 ── Audio analysis ──────────────────────────────────────────────────────
@@ -274,6 +291,8 @@ export async function prepareExport(opts: PrepareOptions): Promise<ExportManifes
     fps: preset.fps,
     outputWidth,
     outputHeight,
+    sourceDisplayWidth,
+    sourceDisplayHeight,
     preset,
     audioUrl,
     audioFileKey,

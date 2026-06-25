@@ -1,6 +1,26 @@
 import type { LayerInstance } from '../../project/types'
 import type { ExportRenderContext, LayerAssetManifest } from '../prepare'
 import type { AudioFeatures } from '../../audio/audioTypes'
+import type { EffectTransform } from '../../runtime/effects'
+
+export interface CanvasLayerGeometry {
+  readonly displayScaleX: number
+  readonly displayScaleY: number
+  readonly exportScaleX: number
+  readonly exportScaleY: number
+  readonly displayStageW: number
+  readonly displayStageH: number
+  readonly exportCanvasW: number
+  readonly exportCanvasH: number
+  readonly displayCenterX: number
+  readonly displayCenterY: number
+  readonly displayBoxW: number
+  readonly displayBoxH: number
+  readonly exportCenterX: number
+  readonly exportCenterY: number
+  readonly exportBoxW: number
+  readonly exportBoxH: number
+}
 
 export interface CanvasRenderArgs {
   ctx: CanvasRenderingContext2D
@@ -17,6 +37,8 @@ export interface CanvasRenderArgs {
   boxH: number
   timeMs: number
   features: AudioFeatures
+  transform: EffectTransform
+  geometry: CanvasLayerGeometry
 }
 
 export interface CanvasLayerRenderer {

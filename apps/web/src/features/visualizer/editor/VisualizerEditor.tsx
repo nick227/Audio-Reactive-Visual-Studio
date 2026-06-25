@@ -21,7 +21,7 @@ import { MediaModal } from './MediaModal'
 import { SubtitleModal } from './SubtitleModal'
 import { ExportPanel } from './ExportPanel'
 import { exportFileBase, suggestExportTitle } from '../export/exportTitle'
-import { WEBCODECS_SUPPORTED, AUDIO_ENCODER_SUPPORTED, exportVideoWebCodecs, type FrameStats } from '../export/webcodecs'
+import { WEBCODECS_SUPPORTED, AUDIO_ENCODER_SUPPORTED, exportVideoWebCodecs, type FrameStats, type WebCodecsExportPhase } from '../export/webcodecs'
 import { computeOutputSize, type ExportPreset } from '../export/presets'
 import { prepareExport, ExportValidationError } from '../export/prepare'
 import type { ExportRenderContext } from '../export/prepare'
@@ -148,6 +148,7 @@ export function VisualizerEditor() {
   const [prepareProgress, setPrepareProgress] = useState(0)
   const [isExportingVideo, setIsExportingVideo] = useState(false)
   const [exportVideoProgress, setExportVideoProgress] = useState(0)
+  const [exportPhase, setExportPhase] = useState<WebCodecsExportPhase | ''>('')
   const [exportOpen, setExportOpen] = useState(false)
   const [exportSnapshot, setExportSnapshot] = useState<Project | null>(null)
   const [lastExport, setLastExport] = useState<{ filename: string; mimeType: string } | null>(() => {
@@ -775,6 +776,8 @@ export function VisualizerEditor() {
         preset,
         outputWidth: outputW,
         outputHeight: outputH,
+        sourceDisplayWidth: displayW,
+        sourceDisplayHeight: displayH,
         signal: abort.signal,
         rehearseCompat: renderCompat,
         rehearseNative: async (timeMs: number, renderCtx: ExportRenderContext) => {
@@ -822,6 +825,7 @@ export function VisualizerEditor() {
     // ── Encode phase ──────────────────────────────────────────────────────────
     setIsExportingVideo(true)
     setExportVideoProgress(0)
+    setExportPhase('encoding-frames')
     setExportStats(null)
 
     // Render function for the encode loop: native canvas or html2canvas compat.
@@ -840,6 +844,8 @@ export function VisualizerEditor() {
       setExportSnapshot(null)
       setIsExportingVideo(false)
       setExportVideoProgress(0)
+      setExportPhase('')
+      setExportStats(null)
     }
 
     if (WEBCODECS_SUPPORTED) {
@@ -853,34 +859,43 @@ export function VisualizerEditor() {
           audioUrl: snapshot.audio?.url,
           onProgress: (p) => setExportVideoProgress(p),
           onFrameStats: setExportStats,
+          onPhase: setExportPhase,
           signal: abort.signal,
           renderFrame,
-          // VP9 is the default — AV1 software encoding is 10–50× slower on CPU.
-          // Set videoCodec: 'auto' to probe for hardware AV1 if needed.
-          videoCodec: 'vp9',
+          videoCodec: preset.videoCodec,
+          maxVideoEncodeQueueSize: preset.maxVideoEncodeQueueSize,
         })
 
         if (!abort.signal.aborted) {
-          const mimeType = 'video/webm'
-          const filename = `${exportFileBase(snapshot.name)}.webm`
+          console.time('[AVL Export] caller completion/download')
           try {
-            await idbPut('export-webm-last', blob)
-            const meta = { filename, mimeType }
-            localStorage.setItem('avl-export-webm-meta', JSON.stringify(meta))
-            setLastExport(meta)
-          } catch { /* IDB unavailable — download still proceeds */ }
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = filename
-          a.click()
-          setTimeout(() => URL.revokeObjectURL(url), 30_000)
+            setExportPhase('complete')
+            const mimeType = 'video/webm'
+            const filename = `${exportFileBase(snapshot.name)}.webm`
+            try {
+              await idbPut('export-webm-last', blob)
+              const meta = { filename, mimeType }
+              localStorage.setItem('avl-export-webm-meta', JSON.stringify(meta))
+              setLastExport(meta)
+            } catch { /* IDB unavailable — download still proceeds */ }
+            if (abort.signal.aborted) throw new DOMException('Export cancelled', 'AbortError')
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = filename
+            a.click()
+            setTimeout(() => URL.revokeObjectURL(url), 30_000)
+            console.log('[AVL Export] caller completion', { filename, mimeType, blobSize: blob.size })
+          } finally {
+            console.timeEnd('[AVL Export] caller completion/download')
+          }
         }
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {
           // cancelled — no-op
         } else {
-          toast.error('Video export failed. Try the MediaRecorder fallback.')
+          const message = e instanceof Error ? e.message : 'Video export failed. Try the MediaRecorder fallback.'
+          toast.error(message)
           console.error('[WebCodecs export]', e)
         }
       } finally {
@@ -1156,6 +1171,7 @@ export function VisualizerEditor() {
           prepareProgress={prepareProgress}
           isExportingVideo={isExportingVideo}
           videoProgress={exportVideoProgress}
+          exportPhase={exportPhase}
           rendererMode={rendererMode}
           rendererDiagnostics={rendererDiagnostics}
           hasAudioEncoder={AUDIO_ENCODER_SUPPORTED}
@@ -1210,4 +1226,3 @@ function DownloadMediaButton({ hasAudio, isExportingVideo, progress, onStart, on
     </button>
   )
 }
-

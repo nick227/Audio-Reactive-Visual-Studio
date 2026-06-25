@@ -114,7 +114,10 @@
 .export-panel--compiling { width: 360px; padding: 20px; }
 .export-compile-header {
   display: flex; align-items: center; gap: 10px;
-  font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 10px;
+  font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 10px;  
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .export-compile-spinner { color: #a78bfa; animation: spin 1s linear infinite; }
 .export-compile-note {

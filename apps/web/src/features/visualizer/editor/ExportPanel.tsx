@@ -3,7 +3,7 @@ import { Download, Image, Loader2, Video, X } from 'lucide-react'
 import { exportFileBase } from '../export/exportTitle'
 import { EXPORT_PRESETS, DEFAULT_PRESET_ID, getPreset, type ExportPreset, type PresetId } from '../export/presets'
 import type { RendererDiagnostics } from '../export/rendererSupport'
-import type { FrameStats } from '../export/webcodecs'
+import type { FrameStats, WebCodecsExportPhase } from '../export/webcodecs'
 
 type Props = {
   hasAudio: boolean
@@ -14,6 +14,7 @@ type Props = {
   prepareProgress: number
   isExportingVideo: boolean
   videoProgress: number
+  exportPhase: WebCodecsExportPhase | ''
   rendererMode: 'native' | 'compat'
   rendererDiagnostics: RendererDiagnostics | null
   hasAudioEncoder: boolean
@@ -51,7 +52,16 @@ function getDiagnostics(): Diagnostics {
   }
 }
 
-export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPreparing, preparePhase, prepareProgress, isExportingVideo, videoProgress, rendererMode, rendererDiagnostics, hasAudioEncoder, exportStats, onExportPng, onExportWebm, onCancelVideo, lastExport, onDownloadLastExport, onClearLastExport, onClose }: Props) {
+const phaseLabels: Record<WebCodecsExportPhase, string> = {
+  'encoding-frames': 'Encoding frames',
+  'flushing-video': 'Flushing video encoder',
+  'muxing-audio': 'Muxing audio',
+  'finalizing-webm': 'Finalizing WebM',
+  'creating-blob': 'Creating download',
+  complete: 'Starting download',
+}
+
+export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPreparing, preparePhase, prepareProgress, isExportingVideo, videoProgress, exportPhase, rendererMode, rendererDiagnostics, hasAudioEncoder, exportStats, onExportPng, onExportWebm, onCancelVideo, lastExport, onDownloadLastExport, onClearLastExport, onClose }: Props) {
   const diag = useMemo(() => getDiagnostics(), [])
   const canWebCodecs = diag.webCodecs
   const canAudio = canWebCodecs ? diag.audioEncoder : true
@@ -89,7 +99,12 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
   const fileBase = exportFileBase(title)
 
   const rendererLabel = rendererMode === 'native' ? 'Canvas native' : 'html2canvas compat'
-  const videoCodecLabel = !canWebCodecs ? 'MediaRecorder' : 'VP9'
+  const presetVideoCodecLabel = preset.videoCodec === 'vp8'
+    ? 'VP8/VP9'
+    : preset.videoCodec === 'auto'
+      ? 'AV1/VP9'
+      : 'VP9'
+  const videoCodecLabel = !canWebCodecs ? 'MediaRecorder' : presetVideoCodecLabel
   const audioCodecLabel = !canWebCodecs
     ? 'Captured'
     : hasAudio && hasAudioEncoder
@@ -138,18 +153,22 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
 
   if (isExportingVideo) {
     const pct = Math.round(videoProgress * 100)
+    const phaseLabel = exportPhase ? phaseLabels[exportPhase] : 'Compiling'
     const etaLabel = exportStats && exportStats.etaSec > 0
       ? `ETA ${exportStats.etaSec < 60 ? `${exportStats.etaSec}s` : `${Math.ceil(exportStats.etaSec / 60)}m`}`
       : ''
-    const frameLabel = exportStats
-      ? `${exportStats.frame}/${exportStats.totalFrames} · ${exportStats.msPerFrame.toFixed(0)} ms/f`
+    const frameLabel = exportStats && exportPhase !== 'complete'
+      ? `${exportStats.frame}/${exportStats.totalFrames} · ${exportStats.msPerFrame.toFixed(0)} ms/f · ${exportStats.encodedFps.toFixed(1)} fps · ${exportStats.realtimeFactor.toFixed(2)}×`
+      : ''
+    const slowExportLabel = exportStats && exportStats.etaSec > 600 && preset.id !== 'draft'
+      ? 'Long export estimate. Draft Fast will be much quicker.'
       : ''
     return (
       <div className="modal-backdrop modal-backdrop--locked" onClick={handleBackdropClick}>
         <div className="export-panel export-panel--compiling">
           <div className="export-compile-header">
             <Loader2 size={18} className="export-compile-spinner" />
-            <span>Compiling · {preset.label} · {videoCodecLabel} · {rendererLabel}…</span>
+            <span>{phaseLabel} · {preset.label} · {videoCodecLabel} · {rendererLabel}…</span>
           </div>
           <div className="export-progress-wrap export-progress-wrap--compile">
             <div className="export-progress-bar">
@@ -157,7 +176,7 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
             </div>
             <span className="export-progress-pct">{pct}%{etaLabel ? ` · ${etaLabel}` : ''}</span>
           </div>
-          {frameLabel && <p className="export-compile-note">{frameLabel}</p>}
+          <p className="export-compile-note">{slowExportLabel || frameLabel || phaseLabel}</p>
           <button className="export-cancel-btn export-cancel-btn--compile" onClick={onCancelVideo}>Cancel compile</button>
         </div>
       </div>
@@ -181,7 +200,7 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
                   onClick={() => setPresetId(p.id)}
                 >
                   {p.label}
-                  <span>{p.fps}fps</span>
+                  <span>{p.fps}fps · {p.videoCodec === 'vp8' ? 'VP8' : p.videoCodec === 'auto' ? 'AV1' : 'VP9'}</span>
                 </button>
               ))}
             </div>
@@ -285,4 +304,3 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
     </div>
   )
 }
-

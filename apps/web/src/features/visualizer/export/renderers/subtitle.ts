@@ -3,6 +3,8 @@ import { findActiveCue } from '../../subtitles/parseSrt'
 import type { SrtCue } from '../../subtitles/parseSrt'
 import { DEFAULT_SUBTITLE_WIDTH, wrapTextToWidth } from '../../subtitles/layout'
 
+const loggedSubtitleFrames = new Set<string>()
+
 type SubtitleDrawStyle = {
   font: string
   fontPx: number
@@ -28,7 +30,7 @@ type SubtitleDrawStyle = {
 
 export const subtitleRenderer: CanvasLayerRenderer = {
   kind: 'subtitle',
-  draw({ ctx, layer, canvasW, canvasH, stageH, boxH, timeMs }: CanvasRenderArgs): void {
+  draw({ ctx, layer, boxW, boxH, transform, geometry, timeMs }: CanvasRenderArgs): void {
     const cues      = (layer.settings.cues ?? []) as SrtCue[]
     const activeCue = findActiveCue(cues, timeMs)
     if (!activeCue) return
@@ -38,9 +40,9 @@ export const subtitleRenderer: CanvasLayerRenderer = {
     const stageFs = Number(layer.settings.fontSize ?? 48)
     const offsetY = Math.max(0, Math.min(100, Number(layer.settings.subtitleOffsetY ?? 10)))
     const subtitleWidthPct = Number(layer.settings.subtitleWidth ?? DEFAULT_SUBTITLE_WIDTH)
-    const scaleY  = canvasH / stageH
-    const style   = subtitleDrawStyle(styleId, color, stageFs * scaleY, scaleY)
-    const maxTextW = (subtitleWidthPct / 100) * canvasW - style.paddingX * 2
+    const cssScale = geometry.exportScaleY
+    const style = subtitleDrawStyle(styleId, color, stageFs * cssScale, cssScale)
+    const maxTextW = (subtitleWidthPct / 100) * boxW - style.paddingX * 2
 
     ctx.save()
     ctx.font = style.font
@@ -52,6 +54,48 @@ export const subtitleRenderer: CanvasLayerRenderer = {
     const blockH  = lines.length * style.lineH + Math.max(0, lines.length - 1) * style.gap
     const bottomY = boxH / 2 - (offsetY / 100) * boxH
     const topY    = bottomY - blockH
+    const visualBoxW = geometry.exportBoxW * transform.scale
+    const visualBoxH = geometry.exportBoxH * transform.scale
+    const visualTextW = Math.max(0, maxTextW) * transform.scale
+    const visualFontPx = style.fontPx * transform.scale
+
+    logSubtitleExportFrame({
+      layerId: layer.id,
+      timeMs,
+      displayedStage: { width: geometry.displayStageW, height: geometry.displayStageH },
+      exportCanvas: { width: geometry.exportCanvasW, height: geometry.exportCanvasH },
+      exportCanvasScale: { x: geometry.exportScaleX, y: geometry.exportScaleY },
+      previewLayer: {
+        x: geometry.displayCenterX,
+        y: geometry.displayCenterY,
+        w: geometry.displayBoxW,
+        h: geometry.displayBoxH,
+        scale: transform.scale,
+      },
+      exportLayer: {
+        x: geometry.exportCenterX,
+        y: geometry.exportCenterY,
+        w: visualBoxW,
+        h: visualBoxH,
+        scale: transform.scale,
+      },
+      fontSize: {
+        preview: stageFs,
+        exportLocal: style.fontPx,
+        exportVisual: visualFontPx,
+      },
+      subtitle: {
+        offsetY,
+        widthPct: subtitleWidthPct,
+        wrapWidthLocal: maxTextW,
+        wrapWidthVisual: visualTextW,
+        lineCount: lines.length,
+        lines,
+        text: activeCue.text,
+        localTopY: topY,
+        localBottomY: bottomY,
+      },
+    })
 
     ctx.save()
     ctx.font = style.font
@@ -209,6 +253,34 @@ function drawSubtitleLine(ctx: CanvasRenderingContext2D, line: string, centerY: 
   ctx.shadowColor = 'transparent'
   ctx.shadowBlur = 0
   ctx.shadowOffsetY = 0
+}
+
+function logSubtitleExportFrame(payload: {
+  layerId: string
+  timeMs: number
+  displayedStage: { width: number; height: number }
+  exportCanvas: { width: number; height: number }
+  exportCanvasScale: { x: number; y: number }
+  previewLayer: { x: number; y: number; w: number; h: number; scale: number }
+  exportLayer: { x: number; y: number; w: number; h: number; scale: number }
+  fontSize: { preview: number; exportLocal: number; exportVisual: number }
+  subtitle: {
+    offsetY: number
+    widthPct: number
+    wrapWidthLocal: number
+    wrapWidthVisual: number
+    lineCount: number
+    lines: string[]
+    text: string
+    localTopY: number
+    localBottomY: number
+  }
+}) {
+  const key = `${payload.layerId}:${payload.exportCanvas.width}x${payload.exportCanvas.height}:${payload.subtitle.text}`
+  if (loggedSubtitleFrames.has(key)) return
+  loggedSubtitleFrames.add(key)
+
+  console.info('[AVL Export Subtitle Geometry]', payload)
 }
 
 function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {

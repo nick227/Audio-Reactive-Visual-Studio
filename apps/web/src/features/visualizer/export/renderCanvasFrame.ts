@@ -43,8 +43,12 @@ export async function renderCanvasFrame(
   const canvasH    = ctx.canvas.height
   const stageW     = snapshot.stage.width
   const stageH     = snapshot.stage.height
-  const scaleX     = canvasW / stageW
-  const scaleY     = canvasH / stageH
+  const displayW   = renderCtx.sourceDisplayWidth || stageW
+  const displayH   = renderCtx.sourceDisplayHeight || stageH
+  const displayScaleX = displayW / stageW
+  const displayScaleY = displayH / stageH
+  const exportScaleX  = canvasW / displayW
+  const exportScaleY  = canvasH / displayH
   const durationMs = renderCtx.durationMs
   const features   = featuresAt(renderCtx.audioAnalysis, renderCtx.fps, timeMs)
 
@@ -77,9 +81,13 @@ export async function renderCanvasFrame(
     const renderer = getRenderer(visualKind)
     if (!renderer) continue   // unsupported kind — compat mode handles these
 
-    const { w: boxW, h: boxH } = layerBoxPx(layer.placement.fit, canvasW, canvasH)
-    const cx = canvasW / 2 + transform.x * scaleX
-    const cy = canvasH / 2 + transform.y * scaleY
+    const { w: displayBoxW, h: displayBoxH } = layerBoxPx(layer.placement.fit, displayW, displayH)
+    const displayCenterX = displayW / 2 + transform.x * displayScaleX
+    const displayCenterY = displayH / 2 + transform.y * displayScaleY
+    const boxW = displayBoxW * exportScaleX
+    const boxH = displayBoxH * exportScaleY
+    const cx = displayCenterX * exportScaleX
+    const cy = displayCenterY * exportScaleY
 
     ctx.save()
     ctx.translate(cx, cy)
@@ -102,6 +110,25 @@ export async function renderCanvasFrame(
       boxH,
       timeMs,
       features,
+      transform,
+      geometry: {
+        displayScaleX,
+        displayScaleY,
+        exportScaleX,
+        exportScaleY,
+        displayStageW: displayW,
+        displayStageH: displayH,
+        exportCanvasW: canvasW,
+        exportCanvasH: canvasH,
+        displayCenterX,
+        displayCenterY,
+        displayBoxW,
+        displayBoxH,
+        exportCenterX: cx,
+        exportCenterY: cy,
+        exportBoxW: boxW,
+        exportBoxH: boxH,
+      },
     })
 
     ctx.filter      = 'none'
