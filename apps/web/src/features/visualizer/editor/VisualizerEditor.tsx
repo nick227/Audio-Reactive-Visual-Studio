@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
-import { Captions, Download, Loader2, Maximize2, Minimize2, Pause, Play, Plus, Upload, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import { useCurrentUser, useCreateProject, useUpdateProject } from '@avl/sdk'
 import { createDefaultProject } from '../project/defaultProject'
@@ -9,12 +8,7 @@ import { clearSavedProject } from '../project/projectPersistence'
 import type { Project, StagePresetId } from '../project/types'
 import { nowIso } from '../entities/entityTypes'
 import { isTypographyLayer } from '../runtime/layerVisualKind'
-import { Stage, type StageHandle } from './Stage'
-import { Waveform } from './Waveform'
-import { AssetList } from './AssetList'
-import { MediaModal } from './MediaModal'
-import { SubtitleModal } from './SubtitleModal'
-import { ExportPanel } from './ExportPanel'
+import type { StageHandle } from './Stage'
 import { exportFileBase, suggestExportTitle } from '../export/exportTitle'
 import { WEBCODECS_SUPPORTED, AUDIO_ENCODER_SUPPORTED, exportVideoWebCodecs, type FrameStats, type WebCodecsExportPhase } from '../export/webcodecs'
 import { computeOutputSize, DEFAULT_PRESET_ID, getPreset, type ExportPreset, type PresetId } from '../export/presets'
@@ -27,7 +21,6 @@ import {
   disposeExportVideoElements,
   renderCanvasFrame,
 } from '../export/renderCanvasFrame'
-import { VideoSettingsModal } from './VideoSettingsModal'
 import { idbPut, idbGet, idbDelete } from '../storage/idbStorage'
 import { SiteTopBar } from '../../../components/SiteTopBar'
 import {
@@ -53,6 +46,10 @@ import { useManagedObjectUrls } from './hooks/useManagedObjectUrls'
 import { useMediaLibrary } from './hooks/useMediaLibrary'
 import { useLayerActions } from './hooks/useLayerActions'
 import { useEditorPlayback } from './hooks/useEditorPlayback'
+import { TransportBar } from './components/TransportBar'
+import { LayersPanel } from './components/LayersPanel'
+import { EditorStageArea } from './components/EditorStageArea'
+import { EditorModals } from './components/EditorModals'
 
 function cloneProject(p: Project): Project {
   return structuredClone(p)
@@ -805,203 +802,82 @@ export function VisualizerEditor() {
 
       <div className={`editor-body ${activeStagePreset}-screen${isFullScreen ? ' full-screen' : ''}`}>
 
-        {/* ── Stage ── */}
-        <div className="stage-area">
-          <div className="stage-controls">
-            <div className="preset-switcher">
-              {stagePresets.map((p) => {
-                const Icon = p.icon
-                return (
-                  <button key={p.id} className={activeStagePreset === p.id ? 'active' : ''} onClick={() => setStagePreset(p.id)} title={`${p.label} · ${p.width} × ${p.height}`}>
-                    <Icon size={13} />
-                  </button>
-                )
-              })}
-            </div>
-            <button className="fs-toggle-btn" onClick={() => setIsFullScreen((v) => !v)} title={isFullScreen ? 'Exit full screen (Esc)' : 'Full screen'}>
-              {isFullScreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            </button>
-          </div>
-          <div className="stage-viewport">
-            <Stage
-              ref={stageRef}
-              project={stageProject}
-              selectedLayerId={selectedLayerId}
-              isPlaying={playback.isPlaying}
-              onSelectLayer={(id) => {
-                setSelectedLayerId(id)
-                if (id !== textEditLayerIdRef.current) setTextEditLayerId(null)
-              }}
-              onUpdateLayer={layerActions.updateLayerTransient}
-              onDragStart={layerActions.snapshotForDrag}
-              onDoubleClickLayer={handleLayerDoubleClick}
-              editingLayerId={textEditLayerId}
-              onTextChange={handleTextChange}
-              onTextCommit={handleTextCommit}
-              currentTimeMs={playback.currentTimeMs}
-            />
-          </div>
-        </div>
+        <EditorStageArea
+          stageRef={stageRef}
+          project={stageProject}
+          activeStagePreset={activeStagePreset}
+          selectedLayerId={selectedLayerId}
+          isPlaying={playback.isPlaying}
+          isFullScreen={isFullScreen}
+          editingLayerId={textEditLayerId}
+          currentTimeMs={playback.currentTimeMs}
+          onSetStagePreset={setStagePreset}
+          onToggleFullScreen={() => setIsFullScreen((v) => !v)}
+          onSelectLayer={(id) => {
+            setSelectedLayerId(id)
+            if (id !== textEditLayerIdRef.current) setTextEditLayerId(null)
+          }}
+          onUpdateLayer={layerActions.updateLayerTransient}
+          onDragStart={layerActions.snapshotForDrag}
+          onDoubleClickLayer={handleLayerDoubleClick}
+          onTextChange={handleTextChange}
+          onTextCommit={handleTextCommit}
+        />
 
-        {/* ── Transport ── */}
-        <div className="transport">
-          <button className="transport-play" onClick={() => void playback.togglePlayback()} disabled={!hasAudio} aria-label={playback.isPlaying ? 'Pause' : 'Play'}>
-            {playback.isPlaying ? <Pause size={15} /> : <Play size={15} />}
-          </button>
-          <div className="transport-waveform">
-            <Waveform peaks={playback.peaks} progress={playback.progress} onSeek={playback.seek} />
-          </div>
-          <label className="transport-audio-label" title={hasAudio ? project.audio?.filename : 'Upload audio'}>
-            <Upload size={13} />
-            <span>{hasAudio ? project.audio!.filename : 'Add Audio'}</span>
-            <input type="file" accept="audio/*" hidden onChange={(e) => e.target.files?.[0] && void playback.handleAudioFile(e.target.files[0])} />
-          </label>
-        </div>
+        <TransportBar hasAudio={hasAudio} audioFilename={project.audio?.filename} playback={playback} />
 
         {/* ── Layers ── */}
         {!isFullScreen && (
-          <>
-            {/* ── Layer list header ── */}
-            <div className="layers-header">
-              <DownloadMediaButton
-                hasAudio={hasAudio}
-                isExportingVideo={isExportingVideo}
-                progress={exportVideoProgress}
-                onStart={openExportModal}
-                onCancel={() => { exportCancelRef.current = true; exportAbortRef.current?.abort() }}
-              />
-              <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => layerActions.openSubtitleEditor()}>
-                <Captions size={13} /> Add Subtitles
-              </button>
-              <button className="layers-add-btn" onClick={openMediaModal}>
-                <Plus size={13} /> Add Layer
-              </button>
-            </div>
-            <AssetList
-              layers={project.layers}
-              selectedLayerId={selectedLayerId}
-              durationMs={(project.audio?.duration ?? 0) * 1000}
-              currentTimeMs={playback.currentTimeMs}
-              onSelect={setSelectedLayerId}
-              onUpdate={layerActions.updateLayer}
-              onUpdateTransient={layerActions.updateLayerTransient}
-              onTimingDragStart={layerActions.snapshotForDrag}
-              onRemove={layerActions.removeLayer}
-              onReorder={layerActions.reorderLayers}
-              onEditSubtitleLayer={layerActions.editSubtitleLayer}
-              onEditVideoLayer={openVideoSettingsModal}
-            />
-          </>
+          <LayersPanel
+            project={project}
+            selectedLayerId={selectedLayerId}
+            currentTimeMs={playback.currentTimeMs}
+            hasAudio={hasAudio}
+            isExportingVideo={isExportingVideo}
+            exportVideoProgress={exportVideoProgress}
+            layerActions={layerActions}
+            onSelectLayer={setSelectedLayerId}
+            onOpenExport={openExportModal}
+            onCancelExport={() => { exportCancelRef.current = true; exportAbortRef.current?.abort() }}
+            onOpenMedia={openMediaModal}
+            onEditVideoLayer={openVideoSettingsModal}
+          />
         )}
 
       </div>
 
-      {modal?.type === 'media' && (
-          <MediaModal
-            onClose={closeModal}
-            onAddTemplate={layerActions.addTemplate}
-            onUploadImage={(file) => void mediaLibrary.addUploadedImage(file)}
-            onUploadVideo={(file) => void mediaLibrary.addUploadedVideo(file)}
-            uploadedImages={mediaLibrary.sessionUploads}
-            uploadedVideos={mediaLibrary.sessionVideos}
-            onReuseImage={mediaLibrary.reuseUpload}
-            onReuseVideo={mediaLibrary.reuseVideo}
-          />
-        )}
-
-      {modal?.type === 'subtitle' && (() => {
-        const editingLayer = project.layers.find((l) => l.id === modal.layerId) ?? null
-        if (!editingLayer) return null
-        return (
-          <SubtitleModal
-            onClose={closeModal}
-            onSave={(cues) => layerActions.updateSubtitleLayerCues(modal.layerId, cues)}
-            editingLayer={editingLayer}
-            onUpdateLayer={(patch) => layerActions.updateLayer(modal.layerId, patch)}
-            waveformPeaks={playback.peaks}
-            audioSrc={project.audio?.url ?? null}
-            audioDuration={project.audio?.duration ?? 0}
-          />
-        )
-      })()}
-
-      {modal?.type === 'video-settings' && (() => {
-        const vLayer = project.layers.find((l) => l.id === modal.layerId) ?? null
-        if (!vLayer) return null
-        return (
-          <VideoSettingsModal
-            layer={vLayer}
-            onClose={closeModal}
-            onUpdate={(patch) => layerActions.updateLayer(modal.layerId, patch)}
-          />
-        )
-      })()}
-
-      {modal?.type === 'export' && (
-        <ExportPanel
-          hasAudio={hasAudio}
-          suggestedTitle={suggestedExportTitle}
-          isExportingPng={isExporting}
-          isPreparing={isPreparing}
-          preparePhase={preparePhase}
-          prepareProgress={prepareProgress}
-          isExportingVideo={isExportingVideo}
-          videoProgress={exportVideoProgress}
-          exportPhase={exportPhase}
-          rendererMode={rendererMode}
-          rendererDiagnostics={rendererDiagnostics}
-          hasAudioEncoder={AUDIO_ENCODER_SUPPORTED}
-          exportStats={exportStats}
-          prerenderStats={prerenderStats}
-          initialPresetId={preferredExportPresetId}
-          onPresetChange={setPreferredExportPresetId}
-          onExportPng={(title) => void exportPng(title)}
-          onExportWebm={beginExportWebm}
-          onCancelVideo={() => { exportCancelRef.current = true; exportAbortRef.current?.abort() }}
-          lastExport={lastExport}
-          onDownloadLastExport={() => void downloadLastExport()}
-          onClearLastExport={clearLastExport}
-          onClose={() => {
-            if (isExportingVideo) return
-            closeModal()
-          }}
-        />
-      )}
+      <EditorModals
+        modal={modal}
+        project={project}
+        mediaLibrary={mediaLibrary}
+        layerActions={layerActions}
+        waveformPeaks={playback.peaks}
+        closeModal={closeModal}
+        exportState={{
+          hasAudio,
+          suggestedTitle: suggestedExportTitle,
+          isExportingPng: isExporting,
+          isPreparing,
+          preparePhase,
+          prepareProgress,
+          isExportingVideo,
+          videoProgress: exportVideoProgress,
+          exportPhase,
+          rendererMode,
+          rendererDiagnostics,
+          hasAudioEncoder: AUDIO_ENCODER_SUPPORTED,
+          exportStats,
+          prerenderStats,
+          initialPresetId: preferredExportPresetId,
+          lastExport,
+          onPresetChange: setPreferredExportPresetId,
+          onExportPng: (title) => void exportPng(title),
+          onExportWebm: beginExportWebm,
+          onCancelVideo: () => { exportCancelRef.current = true; exportAbortRef.current?.abort() },
+          onDownloadLastExport: () => void downloadLastExport(),
+          onClearLastExport: clearLastExport,
+        }}
+      />
     </div>
-  )
-}
-
-type DownloadMediaButtonProps = {
-  hasAudio: boolean
-  isExportingVideo: boolean
-  progress: number
-  onStart: () => void
-  onCancel: () => void
-}
-
-function DownloadMediaButton({ hasAudio, isExportingVideo, progress, onStart, onCancel }: DownloadMediaButtonProps) {
-  const pct = Math.round(progress * 100)
-
-  if (isExportingVideo) {
-    return (
-      <button className="dl-media-btn dl-media-btn--exporting" onClick={onCancel} title="Click to cancel">
-        <div className="dl-media-fill" style={{ width: `${pct}%` }} />
-        <Loader2 size={12} className="dl-media-spinner" />
-        <span className="dl-media-label">Compiling… {pct}%</span>
-        <X size={11} className="dl-media-cancel-icon" />
-      </button>
-    )
-  }
-
-  return (
-    <button
-      className="dl-media-btn"
-      onClick={onStart}
-      disabled={!hasAudio}
-      title={hasAudio ? 'Download canvas + audio as WebM' : 'Add audio first'}
-    >
-      <Download size={12} />
-      <span className="dl-media-label">Download Media</span>
-    </button>
   )
 }
