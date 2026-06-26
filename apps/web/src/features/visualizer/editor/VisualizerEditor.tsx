@@ -23,14 +23,12 @@ import { EditorModals } from './components/EditorModals'
 import { usePrerenderCache } from './hooks/usePrerenderCache'
 import { useEditorExport } from './hooks/useEditorExport'
 import { useProjectLibrary } from './hooks/useProjectLibrary'
-import { useCloudProjectTitleSync } from './hooks/useProjectTitleSync'
 import { saveProjectToLibrary } from '../project/projectLibrary'
 import { SiteTopBar } from '../../../components/SiteTopBar'
 
 export function VisualizerEditor() {
   const { present: project, patchPresent, commitProject, undo, redo, resetHistory } = useEditorHistory()
   const { localSavedAt } = useEditorPersistence({ project })
-  const syncCloudProjectTitle = useCloudProjectTitleSync()
 
   const [selectedLayerId, setSelectedLayerId] = useState(() => project.layers[project.layers.length - 1]?.id ?? '')
   const [textEditLayerId, setTextEditLayerId] = useState<string | null>(null)
@@ -142,15 +140,13 @@ export function VisualizerEditor() {
   const renameProject = useCallback((name: string) => {
     const trimmed = name.trim()
     if (!trimmed) return
-    let renamed: Project | null = null
     commitProject((current) => {
-      renamed = { ...current, name: trimmed, updatedAt: nowIso() }
-      saveProjectToLibrary(renamed)
-      return renamed
+      const next = { ...current, name: trimmed, updatedAt: nowIso() }
+      saveProjectToLibrary(next)
+      return next
     })
     projectLibrary.refreshProjects()
-    if (renamed) void syncCloudProjectTitle(renamed)
-  }, [commitProject, projectLibrary, syncCloudProjectTitle])
+  }, [commitProject, projectLibrary])
 
   const activeStagePreset = useMemo(
     () => getActiveStagePresetId(project.stage.width, project.stage.height),

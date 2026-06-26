@@ -328,12 +328,3 @@ describe('projectLibrary', () => {
     expect(listProjects()[0]?.id).toBe(result.next?.id)
   })
 })
-
-describe('useProjectTitleSync contract', () => {
-  it('does not throw when cloud mutations fail', async () => {
-    const failingCreate = vi.fn().mockRejectedValue(new Error('offline'))
-    await expect(
-      failingCreate().catch(() => {}),
-    ).resolves.toBeUndefined()
-  })
-})

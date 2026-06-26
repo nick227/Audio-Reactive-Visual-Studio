@@ -32,8 +32,10 @@ export function ProjectSwitcher({
   const [open, setOpen] = useState(false)
   const [draftName, setDraftName] = useState(projectName)
   const rootRef = useRef<HTMLDivElement>(null)
+  const dirtyRef = useRef(false)
 
   useEffect(() => {
+    dirtyRef.current = false
     setDraftName(projectName)
   }, [projectName, activeProjectId])
 
@@ -47,6 +49,8 @@ export function ProjectSwitcher({
   }, [open])
 
   function commitName() {
+    if (!dirtyRef.current) return
+    dirtyRef.current = false
     const trimmed = draftName.trim()
     if (!trimmed) {
       setDraftName(projectName)
@@ -69,7 +73,10 @@ export function ProjectSwitcher({
       <input
         className="project-switcher-title"
         value={draftName}
-        onChange={(e) => setDraftName(e.target.value)}
+        onChange={(e) => {
+          dirtyRef.current = true
+          setDraftName(e.target.value)
+        }}
         onBlur={commitName}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()
