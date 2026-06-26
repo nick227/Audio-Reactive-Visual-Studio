@@ -4,8 +4,10 @@ import type { Project } from '../../project/types'
 import { createDefaultProject } from '../../project/defaultProject'
 
 const MAP_KEY = 'avl.cloud-project-map.v1'
+const SYNC_DEBOUNCE_MS = 2000
 
 type CloudProjectMap = Record<string, string>
+type SyncedTitle = { projectId: string; title: string }
 
 function readMap(): CloudProjectMap {
   try {
@@ -35,44 +37,58 @@ function titleOnlyStub(project: Project): Project {
 /** Syncs project titles to the user's cloud account — metadata only, no document or media. */
 export function useProjectTitleSync(project: Project) {
   const { data: meData } = useCurrentUser()
-  const me = meData?.data ?? null
+  const userId = meData?.data?.id
   const createProject = useCreateProject()
   const updateProject = useUpdateProject()
   const projectRef = useRef(project)
   projectRef.current = project
 
+  const createProjectAsyncRef = useRef(createProject.mutateAsync)
+  createProjectAsyncRef.current = createProject.mutateAsync
+  const updateProjectAsyncRef = useRef(updateProject.mutateAsync)
+  updateProjectAsyncRef.current = updateProject.mutateAsync
+
+  const lastSyncedRef = useRef<SyncedTitle | null>(null)
   const prevUserIdRef = useRef<string | null | undefined>(undefined)
-  useEffect(() => {
-    const userId = me?.id ?? null
-    if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== userId) {
-      writeMap({})
-    }
-    prevUserIdRef.current = userId
-  }, [me?.id])
 
   useEffect(() => {
-    if (!me) return
+    const nextUserId = userId ?? null
+    if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== nextUserId) {
+      writeMap({})
+      lastSyncedRef.current = null
+    }
+    prevUserIdRef.current = nextUserId
+  }, [userId])
+
+  useEffect(() => {
+    if (!userId) return
+
     const timer = window.setTimeout(() => {
       void (async () => {
         const current = projectRef.current
+        const last = lastSyncedRef.current
+        if (last?.projectId === current.id && last.title === current.name) return
+
         const map = readMap()
         const cloudId = map[current.id]
         try {
           if (cloudId) {
-            await updateProject.mutateAsync({ id: cloudId, title: current.name })
-            return
+            await updateProjectAsyncRef.current({ id: cloudId, title: current.name })
+          } else {
+            const saved = await createProjectAsyncRef.current({
+              title: current.name,
+              documentJson: titleOnlyStub(current),
+              schemaVersion: current.schemaVersion,
+            })
+            writeMap({ ...map, [current.id]: saved.id })
           }
-          const saved = await createProject.mutateAsync({
-            title: current.name,
-            documentJson: titleOnlyStub(current),
-            schemaVersion: current.schemaVersion,
-          })
-          writeMap({ ...map, [current.id]: saved.id })
+          lastSyncedRef.current = { projectId: current.id, title: current.name }
         } catch {
           // Silent — local editing does not depend on cloud sync.
         }
       })()
-    }, 2000)
+    }, SYNC_DEBOUNCE_MS)
+
     return () => window.clearTimeout(timer)
-  }, [me, project.id, project.name, createProject, updateProject])
+  }, [userId, project.id, project.name])
 }
