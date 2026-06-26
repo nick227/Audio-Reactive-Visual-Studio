@@ -1,15 +1,13 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useCreateProject, useCurrentUser, useUpdateProject } from '@avl/sdk'
 import type { Project } from '../../project/types'
 import { createDefaultProject } from '../../project/defaultProject'
 
 const MAP_KEY = 'avl.cloud-project-map.v1'
 const SYNCED_KEY = 'avl.cloud-title-synced.v1'
-const SYNC_DEBOUNCE_MS = 500
 
 type CloudProjectMap = Record<string, string>
 type SyncedTitles = Record<string, string>
-type Baseline = { userId: string; projectId: string; title: string }
 
 let syncInFlight = false
 
@@ -55,79 +53,64 @@ function titleOnlyStub(project: Project): Project {
   }
 }
 
-/** Syncs project titles to cloud on explicit rename only — metadata, no document or media. */
-export function useProjectTitleSync(project: Project) {
+async function syncCloudProjectTitle(
+  project: Project,
+  userId: string,
+  createProjectAsync: ReturnType<typeof useCreateProject>['mutateAsync'],
+  updateProjectAsync: ReturnType<typeof useUpdateProject>['mutateAsync'],
+) {
+  const key = syncStorageKey(userId, project.id)
+  if (readSyncedTitles()[key] === project.name || syncInFlight) return
+
+  syncInFlight = true
+  try {
+    const map = readMap()
+    const cloudId = map[project.id]
+    if (cloudId) {
+      await updateProjectAsync({ id: cloudId, title: project.name })
+    } else {
+      const saved = await createProjectAsync({
+        title: project.name,
+        documentJson: titleOnlyStub(project),
+        schemaVersion: project.schemaVersion,
+      })
+      writeMap({ ...map, [project.id]: saved.id })
+    }
+    writeSyncedTitle(key, project.name)
+  } catch {
+    // Silent — local editing does not depend on cloud sync.
+  } finally {
+    syncInFlight = false
+  }
+}
+
+/** Returns a function to sync project titles to cloud — call only on explicit rename. */
+export function useCloudProjectTitleSync() {
   const { data: meData } = useCurrentUser()
   const userId = meData?.data?.id
   const createProject = useCreateProject()
   const updateProject = useUpdateProject()
-  const projectRef = useRef(project)
-  projectRef.current = project
 
   const createProjectAsyncRef = useRef(createProject.mutateAsync)
   createProjectAsyncRef.current = createProject.mutateAsync
   const updateProjectAsyncRef = useRef(updateProject.mutateAsync)
   updateProjectAsyncRef.current = updateProject.mutateAsync
 
-  const baselineRef = useRef<Baseline | null>(null)
   const prevUserIdRef = useRef<string | undefined>(undefined)
-
   useEffect(() => {
-    if (!userId) {
-      baselineRef.current = null
-      prevUserIdRef.current = undefined
-      return
-    }
-
     if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== userId) {
       writeMap({})
     }
     prevUserIdRef.current = userId
+  }, [userId])
 
-    const baseline = baselineRef.current
-    if (!baseline || baseline.userId !== userId || baseline.projectId !== project.id) {
-      baselineRef.current = { userId, projectId: project.id, title: project.name }
-      return
-    }
-
-    if (baseline.title === project.name) return
-
-    baselineRef.current = { userId, projectId: project.id, title: project.name }
-
-    const storageKey = syncStorageKey(userId, project.id)
-    if (readSyncedTitles()[storageKey] === project.name) return
-
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        const current = projectRef.current
-        if (!userId) return
-
-        const key = syncStorageKey(userId, current.id)
-        if (readSyncedTitles()[key] === current.name || syncInFlight) return
-
-        syncInFlight = true
-        try {
-          const map = readMap()
-          const cloudId = map[current.id]
-          if (cloudId) {
-            await updateProjectAsyncRef.current({ id: cloudId, title: current.name })
-          } else {
-            const saved = await createProjectAsyncRef.current({
-              title: current.name,
-              documentJson: titleOnlyStub(current),
-              schemaVersion: current.schemaVersion,
-            })
-            writeMap({ ...map, [current.id]: saved.id })
-          }
-          writeSyncedTitle(key, current.name)
-        } catch {
-          // Silent — local editing does not depend on cloud sync.
-        } finally {
-          syncInFlight = false
-        }
-      })()
-    }, SYNC_DEBOUNCE_MS)
-
-    return () => window.clearTimeout(timer)
-  }, [userId, project.id, project.name])
+  return useCallback((project: Project) => {
+    if (!userId) return Promise.resolve()
+    return syncCloudProjectTitle(
+      project,
+      userId,
+      createProjectAsyncRef.current,
+      updateProjectAsyncRef.current,
+    )
+  }, [userId])
 }

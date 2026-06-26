@@ -52,7 +52,7 @@ export function ProjectSwitcher({
       setDraftName(projectName)
       return
     }
-    if (trimmed !== projectName) onRename(trimmed)
+    if (trimmed !== projectName.trim()) onRename(trimmed)
   }
 
   function confirmDelete(item: ProjectIndexEntry) {
