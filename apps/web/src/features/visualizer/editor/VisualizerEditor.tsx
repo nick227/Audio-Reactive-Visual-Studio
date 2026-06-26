@@ -60,6 +60,7 @@ import {
 import { applyLayerPatch } from './core/layerPatch'
 import { getActiveStagePresetId, stagePresets } from './core/stagePresets'
 import { clearLastExportMeta, loadLastExportMeta, saveLastExportMeta, type LastExportMeta } from './core/exportMeta'
+import { useEditorModal } from './hooks/useEditorModal'
 
 const UI_FRAME_INTERVAL_MS = 100
 
@@ -150,7 +151,7 @@ export function VisualizerEditor() {
   const [meterFeatures, setMeterFeatures] = useState<AudioFeatures>(silentAudioFeatures)
   const [peaks, setPeaks] = useState<number[]>(new Array(160).fill(0.12))
   const [progress, setProgress] = useState(0)
-  const [mediaOpen, setMediaOpen] = useState(false)
+  const { modal, closeModal, openMediaModal, openSubtitleModal: showSubtitleModal, openVideoSettingsModal, openExportModal } = useEditorModal()
   const [sessionUploads, setSessionUploads] = useState<Array<{ id: string; name: string; url: string; fileKey: string }>>([])
   const [sessionVideos, setSessionVideos] = useState<Array<{ id: string; name: string; url: string; fileKey: string }>>([])
   const [isExporting, setIsExporting] = useState(false)
@@ -160,16 +161,12 @@ export function VisualizerEditor() {
   const [isExportingVideo, setIsExportingVideo] = useState(false)
   const [exportVideoProgress, setExportVideoProgress] = useState(0)
   const [exportPhase, setExportPhase] = useState<WebCodecsExportPhase | ''>('')
-  const [exportOpen, setExportOpen] = useState(false)
   const [exportSnapshot, setExportSnapshot] = useState<Project | null>(null)
   const [lastExport, setLastExport] = useState<LastExportMeta | null>(() => loadLastExportMeta())
   const stageProject = exportSnapshot ?? project
-  const [subtitleOpen, setSubtitleOpen] = useState(false)
-  const [videoSettingsLayerId, setVideoSettingsLayerId] = useState<string | null>(null)
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [fsUiIdle, setFsUiIdle] = useState(false)
   const fsIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [editingSubtitleLayerId, setEditingSubtitleLayerId] = useState<string | null>(null)
   const [currentTimeMs, setCurrentTimeMs] = useState(0)
   const playbackTimeMsRef = useRef(0)
   const exportActiveRef = useRef(false)
@@ -620,27 +617,26 @@ export function VisualizerEditor() {
     const layer = template.createLayer()
     commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
     setSelectedLayerId(layer.id)
-    setMediaOpen(false)
-  }, [commitProject])
+    closeModal()
+  }, [closeModal, commitProject])
 
-  const openSubtitleModal = useCallback((layerId?: string) => {
+  const openSubtitleEditor = useCallback((layerId?: string) => {
     if (layerId) {
-      setEditingSubtitleLayerId(layerId)
       setSelectedLayerId(layerId)
+      showSubtitleModal(layerId)
     } else {
       const template = assetRegistry.get('subtitle-layer')
       if (!template) return
       const layer = template.createLayer()
       commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
       setSelectedLayerId(layer.id)
-      setEditingSubtitleLayerId(layer.id)
+      showSubtitleModal(layer.id)
     }
-    setSubtitleOpen(true)
-  }, [commitProject])
+  }, [commitProject, showSubtitleModal])
 
   const editSubtitleLayer = useCallback((layerId: string) => {
-    openSubtitleModal(layerId)
-  }, [openSubtitleModal])
+    openSubtitleEditor(layerId)
+  }, [openSubtitleEditor])
 
   const updateSubtitleLayerCues = useCallback((layerId: string, cues: import('../subtitles/parseSrt').SrtCue[]) => {
     commitProject((current) => ({ ...current, layers: applyLayerPatch(current.layers, layerId, { settings: { cues } }) }))
@@ -657,8 +653,8 @@ export function VisualizerEditor() {
     commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
     setSelectedLayerId(layer.id)
     setSessionUploads((prev) => [...prev, { id: fileKey, name: file.name, url, fileKey }])
-    setMediaOpen(false)
-  }, [commitProject, registerObjectUrl])
+    closeModal()
+  }, [closeModal, commitProject, registerObjectUrl])
 
   const reuseUpload = useCallback((url: string, name: string, fileKey: string) => {
     const template = assetRegistry.get('photo-cutout')
@@ -666,8 +662,8 @@ export function VisualizerEditor() {
     const layer = template.createLayer({ name, settings: { src: url, srcKey: fileKey } })
     commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
     setSelectedLayerId(layer.id)
-    setMediaOpen(false)
-  }, [commitProject])
+    closeModal()
+  }, [closeModal, commitProject])
 
   const addUploadedVideo = useCallback(async (file: File) => {
     const template = assetRegistry.get('video-layer')
@@ -679,8 +675,8 @@ export function VisualizerEditor() {
     commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
     setSelectedLayerId(layer.id)
     setSessionVideos((prev) => [...prev, { id: fileKey, name: file.name, url, fileKey }])
-    setMediaOpen(false)
-  }, [commitProject, registerObjectUrl])
+    closeModal()
+  }, [closeModal, commitProject, registerObjectUrl])
 
   const reuseVideo = useCallback((url: string, name: string, fileKey: string) => {
     const template = assetRegistry.get('video-layer')
@@ -688,8 +684,8 @@ export function VisualizerEditor() {
     const layer = template.createLayer({ name, settings: { src: url, srcKey: fileKey } })
     commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
     setSelectedLayerId(layer.id)
-    setMediaOpen(false)
-  }, [commitProject])
+    closeModal()
+  }, [closeModal, commitProject])
 
   // Does NOT revoke blob URLs or delete IDB entries — undo may restore the layer.
   // Cleanup happens on resetProject or session end.
@@ -853,7 +849,7 @@ export function VisualizerEditor() {
 
     flushSync(() => {
       setExportSnapshot(snapshot)
-      setExportOpen(true)
+      openExportModal()
     })
 
     const displayW = stageEl.offsetWidth
@@ -1104,7 +1100,7 @@ export function VisualizerEditor() {
         cleanup()
       }
     }
-  }, [stopPlayback, syncStageFrame])
+  }, [openExportModal, stopPlayback, syncStageFrame])
 
   const beginExportWebm = useCallback((title: string, preset: ExportPreset) => {
     const name = title.trim() || suggestedExportTitle
@@ -1227,13 +1223,13 @@ export function VisualizerEditor() {
                 hasAudio={hasAudio}
                 isExportingVideo={isExportingVideo}
                 progress={exportVideoProgress}
-                onStart={() => setExportOpen(true)}
+                onStart={openExportModal}
                 onCancel={() => { exportCancelRef.current = true; exportAbortRef.current?.abort() }}
               />
-              <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => openSubtitleModal()}>
+              <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => openSubtitleEditor()}>
                 <Captions size={13} /> Add Subtitles
               </button>
-              <button className="layers-add-btn" onClick={() => setMediaOpen(true)}>
+              <button className="layers-add-btn" onClick={openMediaModal}>
                 <Plus size={13} /> Add Layer
               </button>
             </div>
@@ -1249,16 +1245,16 @@ export function VisualizerEditor() {
               onRemove={removeLayer}
               onReorder={reorderLayers}
               onEditSubtitleLayer={editSubtitleLayer}
-              onEditVideoLayer={setVideoSettingsLayerId}
+              onEditVideoLayer={openVideoSettingsModal}
             />
           </>
         )}
 
       </div>
 
-      {mediaOpen && (
+      {modal?.type === 'media' && (
           <MediaModal
-            onClose={() => setMediaOpen(false)}
+            onClose={closeModal}
             onAddTemplate={addTemplate}
             onUploadImage={(file) => void addUploadedImage(file)}
             onUploadVideo={(file) => void addUploadedVideo(file)}
@@ -1269,15 +1265,15 @@ export function VisualizerEditor() {
           />
         )}
 
-      {subtitleOpen && editingSubtitleLayerId && (() => {
-        const editingLayer = project.layers.find((l) => l.id === editingSubtitleLayerId) ?? null
+      {modal?.type === 'subtitle' && (() => {
+        const editingLayer = project.layers.find((l) => l.id === modal.layerId) ?? null
         if (!editingLayer) return null
         return (
           <SubtitleModal
-            onClose={() => { setSubtitleOpen(false); setEditingSubtitleLayerId(null) }}
-            onSave={(cues) => updateSubtitleLayerCues(editingSubtitleLayerId, cues)}
+            onClose={closeModal}
+            onSave={(cues) => updateSubtitleLayerCues(modal.layerId, cues)}
             editingLayer={editingLayer}
-            onUpdateLayer={(patch) => updateLayer(editingSubtitleLayerId, patch)}
+            onUpdateLayer={(patch) => updateLayer(modal.layerId, patch)}
             waveformPeaks={peaks}
             audioSrc={project.audio?.url ?? null}
             audioDuration={project.audio?.duration ?? 0}
@@ -1285,19 +1281,19 @@ export function VisualizerEditor() {
         )
       })()}
 
-      {videoSettingsLayerId && (() => {
-        const vLayer = project.layers.find((l) => l.id === videoSettingsLayerId) ?? null
+      {modal?.type === 'video-settings' && (() => {
+        const vLayer = project.layers.find((l) => l.id === modal.layerId) ?? null
         if (!vLayer) return null
         return (
           <VideoSettingsModal
             layer={vLayer}
-            onClose={() => setVideoSettingsLayerId(null)}
-            onUpdate={(patch) => updateLayer(videoSettingsLayerId, patch)}
+            onClose={closeModal}
+            onUpdate={(patch) => updateLayer(modal.layerId, patch)}
           />
         )
       })()}
 
-      {exportOpen && (
+      {modal?.type === 'export' && (
         <ExportPanel
           hasAudio={hasAudio}
           suggestedTitle={suggestedExportTitle}
@@ -1323,7 +1319,7 @@ export function VisualizerEditor() {
           onClearLastExport={clearLastExport}
           onClose={() => {
             if (isExportingVideo) return
-            setExportOpen(false)
+            closeModal()
           }}
         />
       )}
