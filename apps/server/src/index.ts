@@ -13,7 +13,9 @@ import * as security from './plugins/security'
 import { AiTranscribeService, type TranscribeProvider } from './services/AiTranscribeService'
 import { MediaStorageService } from './services/MediaStorageService'
 
-const server = Fastify({ logger: true })
+const MAX_UPLOAD_BYTES = 30 * 1024 * 1024 // 30 MB — matches Whisper / multipart cap
+
+const server = Fastify({ logger: true, bodyLimit: MAX_UPLOAD_BYTES })
 const mediaStorage = new MediaStorageService()
 
 const specPath = resolve(__dirname, '../../../packages/api-spec/openapi.yaml')
@@ -33,7 +35,7 @@ async function main() {
   await server.register(cookie)
 
   // 30 MB limit — OpenAI Whisper cap is 25 MB
-  await server.register(multipart, { limits: { fileSize: 30 * 1024 * 1024 } })
+  await server.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES } })
 
   server.addContentTypeParser(
     /^(image|video|audio)\/.+|application\/octet-stream/,
