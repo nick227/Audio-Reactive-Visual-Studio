@@ -277,6 +277,8 @@ components:
           type: boolean
         uploadedBy:
           type: string
+        publicUrl:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -321,6 +323,92 @@ components:
           nullable: true
         published:
           type: boolean
+
+    CommunityCompleteUploadInput:
+      type: object
+      required: [fileKey, filename, mimeType, sizeBytes]
+      properties:
+        fileKey:
+          type: string
+        filename:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        title:
+          type: string
+          nullable: true
+
+    LibraryConfig:
+      type: object
+      required: [disabledKeys, cloudAssets]
+      properties:
+        disabledKeys:
+          type: array
+          items:
+            type: string
+        cloudAssets:
+          type: array
+          items:
+            $ref: '#/components/schemas/CloudLibraryAssetItem'
+
+    CloudLibraryAssetItem:
+      type: object
+      required: [id, title, filename, mimeType, publicUrl, kind]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        filename:
+          type: string
+        mimeType:
+          type: string
+        publicUrl:
+          type: string
+        kind:
+          type: string
+          enum: [image, video, audio]
+
+    LibraryConfigResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/LibraryConfig'
+
+    DisabledKeysResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+
+    SetLibraryItemInput:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+
+    LibraryItemState:
+      type: object
+      required: [itemKey, enabled]
+      properties:
+        itemKey:
+          type: string
+        enabled:
+          type: boolean
+
+    LibraryItemStateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/LibraryItemState'
 
     # Phase 2 — media upload
     UploadUrlInput:
@@ -1068,7 +1156,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CompleteUploadInput'
+              $ref: '#/components/schemas/CommunityCompleteUploadInput'
       responses:
         '201':
           description: Community asset created
@@ -1076,6 +1164,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommunityAssetResponse'
+        '400':
+          description: Upload missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Not authenticated
           content:
@@ -1088,12 +1182,92 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '501':
-          description: Not yet implemented (Phase 2)
+        '409':
+          description: Asset already exists
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/library/overrides:
+    get:
+      operationId: listLibraryOverrides
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: List disabled studio/stock library item keys
+      responses:
+        '200':
+          description: Disabled item keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisabledKeysResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/library/items/{itemKey}:
+    patch:
+      operationId: setLibraryItemEnabled
+      security:
+        - adminAuth: []
+      tags: [admin]
+      summary: Enable or disable a studio template or stock media item
+      parameters:
+        - name: itemKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetLibraryItemInput'
+      responses:
+        '200':
+          description: Updated item state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryItemStateResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /library/config:
+    get:
+      operationId: getLibraryConfig
+      security: []
+      tags: [library]
+      summary: Public library config — disabled keys and published cloud assets
+      responses:
+        '200':
+          description: Library config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryConfigResponse'
 
   /admin/community-assets/{id}:
     patch:

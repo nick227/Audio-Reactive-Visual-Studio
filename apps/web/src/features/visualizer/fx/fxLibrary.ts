@@ -39,38 +39,40 @@ export const puppetItems: FxItem[] = communityAssets
   .map(assetToFxItem)
 
 export type LayerTypeFilter =
-  | 'all'
+  | 'mine'
   | 'images'
   | 'videos'
   | 'text'
   | 'backdrop'
-  | 'particles'
+  | 'effects'
   | 'objects'
-  | 'type-frames'
-  | 'fx-overlays'
 
 export const LAYER_TYPE_FILTERS: { id: LayerTypeFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
+  { id: 'mine', label: 'Mine' },
   { id: 'images', label: 'Images' },
   { id: 'videos', label: 'Videos' },
   { id: 'text', label: 'Text' },
   { id: 'backdrop', label: 'Backdrops' },
-  { id: 'particles', label: 'Particles' },
+  { id: 'effects', label: 'Effects' },
   { id: 'objects', label: 'Objects' },
-  { id: 'type-frames', label: 'Type & Frames' },
-  { id: 'fx-overlays', label: 'FX' },
 ]
 
 export function filterByLayerType(items: FxItem[], filter: LayerTypeFilter): FxItem[] {
-  if (filter === 'all' || filter === 'images' || filter === 'videos') return []
+  if (filter === 'mine' || filter === 'images' || filter === 'videos') return []
   if (filter === 'text') return items.filter((item) => item.category === 'typography')
   if (filter === 'backdrop') {
     return items.filter((item) => item.collection === 'backgrounds' || item.collection === 'visualizers')
   }
-  if (filter === 'objects') {
-    return items.filter((item) => item.collection === 'objects' || item.collection === 'puppets')
+  if (filter === 'effects') {
+    return items.filter((item) => item.collection === 'particles' || item.collection === 'fx-overlays')
   }
-  return items.filter((item) => item.collection === filter)
+  if (filter === 'objects') {
+    return items.filter((item) => {
+      if (item.collection === 'objects' || item.collection === 'puppets') return true
+      return item.collection === 'type-frames' && item.category !== 'typography'
+    })
+  }
+  return []
 }
 
 export function filterFxItems(items: FxItem[], query: string): FxItem[] {
@@ -89,8 +91,12 @@ export function filterCommunityItems(query: string): FxItem[] {
   return filterFxItems(fxItems, query)
 }
 
-export function getLayerCatalogItems(query: string): FxItem[] {
-  const all = filterCommunityItems(query)
+export function getLayerCatalogItems(query: string, disabledKeys?: string[]): FxItem[] {
+  const disabled = disabledKeys?.length ? new Set(disabledKeys) : null
+  const all = filterCommunityItems(query).filter((item) => {
+    if (!disabled) return true
+    return !disabled.has(`studio:${item.add.templateId}`)
+  })
   const text = all.filter((i) => i.category === 'typography')
   const puppets = all.filter((i) => i.category === 'puppets')
   const library = COMMUNITY_SECTIONS

@@ -6,6 +6,7 @@ export type CommunityAsset = {
   mimeType: string
   sizeBytes: number
   published: boolean
+  publicUrl?: string
   createdAt: string
   updatedAt: string
 }

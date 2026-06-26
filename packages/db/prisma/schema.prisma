@@ -113,6 +113,12 @@ model CommunityAsset {
   uploader   User     @relation(fields: [uploadedBy], references: [id])
 }
 
+// Admin-disabled studio templates or stock media. Absence = enabled.
+model DisabledLibraryItem {
+  itemKey   String   @id
+  createdAt DateTime @default(now())
+}
+
 enum Visibility {
   PRIVATE
   PUBLIC

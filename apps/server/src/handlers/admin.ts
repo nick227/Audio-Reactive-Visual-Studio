@@ -1,8 +1,12 @@
 import { AdminUserService } from '../services/AdminUserService'
 import { CommunityAssetService } from '../services/CommunityAssetService'
+import { LibraryService } from '../services/LibraryService'
+import { MediaStorageService } from '../services/MediaStorageService'
 
 const adminUserService = new AdminUserService()
 const communityAssetService = new CommunityAssetService()
+const libraryService = new LibraryService()
+const mediaStorage = new MediaStorageService()
 
 // ── User management ────────────────────────────────────────────────────────
 
@@ -69,6 +73,7 @@ function toCommunityAssetDto(asset: {
     title: asset.title,
     published: asset.published,
     uploadedBy: asset.uploadedBy,
+    publicUrl: mediaStorage.getPublicUrl(asset.fileKey),
     createdAt: asset.createdAt.toISOString(),
     updatedAt: asset.updatedAt.toISOString(),
   }
@@ -79,12 +84,52 @@ export async function listCommunityAssets(_request: any, reply: any) {
   return reply.send({ data: assets.map(toCommunityAssetDto) })
 }
 
-export async function requestCommunityUploadUrl(_request: any, reply: any) {
-  return reply.status(501).send({ error: 'R2 upload not yet implemented (Phase 2)' })
+export async function requestCommunityUploadUrl(request: any, reply: any) {
+  const body = request.body as {
+    filename: string
+    mimeType: string
+    sizeBytes: number
+    title?: string
+  }
+  const fileKey = mediaStorage.buildFileKey(request.user.id, body.filename)
+  const uploadUrl = await mediaStorage.createUploadUrl(fileKey, body.mimeType, body.sizeBytes)
+  return reply.send({ data: { fileKey, uploadUrl } })
 }
 
-export async function completeCommunityUpload(_request: any, reply: any) {
-  return reply.status(501).send({ error: 'R2 upload not yet implemented (Phase 2)' })
+export async function completeCommunityUpload(request: any, reply: any) {
+  const body = request.body as {
+    fileKey: string
+    filename: string
+    mimeType: string
+    sizeBytes: number
+    title?: string | null
+  }
+
+  const existing = await communityAssetService.findByFileKey(body.fileKey)
+  if (existing) {
+    return reply.status(409).send({ error: 'Asset already registered for this file key' })
+  }
+
+  const exists = await mediaStorage.objectExists(body.fileKey)
+  if (!exists) {
+    return reply.status(400).send({ error: 'Upload not found — complete the file upload first' })
+  }
+
+  let sizeBytes = body.sizeBytes
+  if (!mediaStorage.isCloudStorage()) {
+    sizeBytes = mediaStorage.localSize(body.fileKey)
+  }
+
+  const asset = await communityAssetService.create({
+    uploadedBy: request.user.id,
+    fileKey: body.fileKey,
+    filename: body.filename,
+    mimeType: body.mimeType,
+    sizeBytes,
+    title: body.title ?? null,
+  })
+
+  return reply.status(201).send({ data: toCommunityAssetDto(asset) })
 }
 
 export async function updateCommunityAsset(request: any, reply: any) {
@@ -96,6 +141,25 @@ export async function updateCommunityAsset(request: any, reply: any) {
 
 export async function deleteCommunityAsset(request: any, reply: any) {
   const { id } = request.params as { id: string }
+  const asset = await communityAssetService.findById(id)
+  if (!asset) {
+    return reply.status(404).send({ error: 'Not found' })
+  }
+  await mediaStorage.deleteObject(asset.fileKey)
   await communityAssetService.delete(id)
   return reply.status(204).send()
+}
+
+// ── Library overrides ──────────────────────────────────────────────────────
+
+export async function listLibraryOverrides(_request: any, reply: any) {
+  const disabledKeys = await libraryService.listDisabledKeys()
+  return reply.send({ data: disabledKeys })
+}
+
+export async function setLibraryItemEnabled(request: any, reply: any) {
+  const { itemKey } = request.params as { itemKey: string }
+  const body = request.body as { enabled: boolean }
+  const result = await libraryService.setItemEnabled(decodeURIComponent(itemKey), body.enabled)
+  return reply.send({ data: result })
 }

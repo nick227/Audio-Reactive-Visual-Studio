@@ -11,8 +11,10 @@ import { resolve } from 'path'
 import * as handlers from './handlers'
 import * as security from './plugins/security'
 import { AiTranscribeService, type TranscribeProvider } from './services/AiTranscribeService'
+import { MediaStorageService } from './services/MediaStorageService'
 
 const server = Fastify({ logger: true })
+const mediaStorage = new MediaStorageService()
 
 const specPath = resolve(__dirname, '../../../packages/api-spec/openapi.yaml')
 const spec = load(readFileSync(specPath, 'utf-8')) as object
@@ -31,6 +33,12 @@ async function main() {
 
   // 30 MB limit — OpenAI Whisper cap is 25 MB
   await server.register(multipart, { limits: { fileSize: 30 * 1024 * 1024 } })
+
+  server.addContentTypeParser(
+    /^(image|video|audio)\/.+|application\/octet-stream/,
+    { parseAs: 'buffer' },
+    (_request, body, done) => { done(null, body) },
+  )
 
   await server.register(swagger, { openapi: spec })
   await server.register(swaggerUi, { routePrefix: '/docs' })
@@ -60,6 +68,30 @@ async function main() {
   } as any)
 
   server.get('/health', async () => ({ status: 'ok' }))
+
+  // Local dev upload target when R2 is not configured.
+  server.put('/internal/community-upload/*', async (request, reply) => {
+    const fileKey = decodeURIComponent((request.params as { '*': string })['*'])
+    const buffer = await request.body as Buffer
+    if (!buffer?.length) {
+      return reply.status(400).send({ error: 'Empty upload body' })
+    }
+    await mediaStorage.saveLocal(fileKey, buffer)
+    return reply.status(204).send()
+  })
+
+  server.get('/media/community/*', async (request, reply) => {
+    const fileKey = decodeURIComponent((request.params as { '*': string })['*'])
+    if (mediaStorage.isCloudStorage()) {
+      return reply.redirect(mediaStorage.getPublicUrl(fileKey))
+    }
+    try {
+      const stream = mediaStorage.openLocalStream(fileKey)
+      return reply.send(stream)
+    } catch {
+      return reply.status(404).send({ error: 'Not found' })
+    }
+  })
 
   // ── AI transcription ──────────────────────────────────────────────────────
   // Registered outside openapi-glue because multipart doesn't fit the

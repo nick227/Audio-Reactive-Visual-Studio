@@ -72,6 +72,7 @@ export function useUpdateCommunityAsset() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'community-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['library', 'config'] })
     },
   })
 }
@@ -87,6 +88,74 @@ export function useDeleteCommunityAsset() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'community-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['library', 'config'] })
+    },
+  })
+}
+
+export function useUploadCommunityAsset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const mimeType = file.type || 'application/octet-stream'
+      const { data: urlData, error: urlErr, response: urlRes } = await getApiClient().POST(
+        '/admin/community-assets/upload-url',
+        { body: { filename: file.name, mimeType, sizeBytes: file.size, title: file.name } },
+      )
+      if (urlErr) throw new ApiError(urlRes.status, (urlErr as { error?: string }).error ?? 'Upload URL failed')
+
+      const putRes = await fetch(urlData!.data.uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': mimeType },
+        credentials: 'include',
+      })
+      if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`)
+
+      const { data, error, response } = await getApiClient().POST('/admin/community-assets/complete', {
+        body: {
+          fileKey: urlData!.data.fileKey,
+          filename: file.name,
+          mimeType,
+          sizeBytes: file.size,
+          title: file.name,
+        },
+      })
+      if (error) throw new ApiError(response.status, (error as { error?: string }).error ?? 'Complete failed')
+      return data!
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'community-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['library', 'config'] })
+    },
+  })
+}
+
+export function useLibraryOverrides() {
+  return useQuery({
+    queryKey: ['admin', 'library-overrides'],
+    queryFn: async () => {
+      const { data, error, response } = await getApiClient().GET('/admin/library/overrides')
+      if (error) throw new ApiError(response.status, (error as any).error)
+      return data!
+    },
+  })
+}
+
+export function useSetLibraryItemEnabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ itemKey, enabled }: { itemKey: string; enabled: boolean }) => {
+      const { data, error, response } = await getApiClient().PATCH('/admin/library/items/{itemKey}', {
+        params: { path: { itemKey: encodeURIComponent(itemKey) } },
+        body: { enabled },
+      })
+      if (error) throw new ApiError(response.status, (error as any).error)
+      return data!
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'library-overrides'] })
+      queryClient.invalidateQueries({ queryKey: ['library', 'config'] })
     },
   })
 }

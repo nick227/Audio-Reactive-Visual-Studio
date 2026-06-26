@@ -299,6 +299,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/library/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List disabled studio/stock library item keys */
+        get: operations["listLibraryOverrides"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/library/items/{itemKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Enable or disable a studio template or stock media item */
+        patch: operations["setLibraryItemEnabled"];
+        trace?: never;
+    };
+    "/library/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public library config — disabled keys and published cloud assets */
+        get: operations["getLibraryConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/community-assets/{id}": {
         parameters: {
             query?: never;
@@ -477,6 +528,7 @@ export interface components {
             title?: string | null;
             published: boolean;
             uploadedBy: string;
+            publicUrl?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -497,6 +549,42 @@ export interface components {
         UpdateCommunityAssetInput: {
             title?: string | null;
             published?: boolean;
+        };
+        CommunityCompleteUploadInput: {
+            fileKey: string;
+            filename: string;
+            mimeType: string;
+            sizeBytes: number;
+            title?: string | null;
+        };
+        LibraryConfig: {
+            disabledKeys: string[];
+            cloudAssets: components["schemas"]["CloudLibraryAssetItem"][];
+        };
+        CloudLibraryAssetItem: {
+            id: string;
+            title: string;
+            filename: string;
+            mimeType: string;
+            publicUrl: string;
+            /** @enum {string} */
+            kind: "image" | "video" | "audio";
+        };
+        LibraryConfigResponse: {
+            data: components["schemas"]["LibraryConfig"];
+        };
+        DisabledKeysResponse: {
+            data: string[];
+        };
+        SetLibraryItemInput: {
+            enabled: boolean;
+        };
+        LibraryItemState: {
+            itemKey: string;
+            enabled: boolean;
+        };
+        LibraryItemStateResponse: {
+            data: components["schemas"]["LibraryItemState"];
         };
         UploadUrlInput: {
             projectId: string;
@@ -1381,7 +1469,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CompleteUploadInput"];
+                "application/json": components["schemas"]["CommunityCompleteUploadInput"];
             };
         };
         responses: {
@@ -1392,6 +1480,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommunityAssetResponse"];
+                };
+            };
+            /** @description Upload missing or invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Not authenticated */
@@ -1412,13 +1509,115 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Not yet implemented (Phase 2) */
-            501: {
+            /** @description Asset already exists */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listLibraryOverrides: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disabled item keys */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisabledKeysResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setLibraryItemEnabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLibraryItemInput"];
+            };
+        };
+        responses: {
+            /** @description Updated item state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryItemStateResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getLibraryConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Library config */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryConfigResponse"];
                 };
             };
         };

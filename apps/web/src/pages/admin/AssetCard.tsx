@@ -162,11 +162,20 @@ export function AssetCard({
 }: AssetCardProps) {
   const cat = mimeCategory(asset.mimeType)
   const Icon = MIME_ICONS[cat]
+  const hasPreview = asset.publicUrl && (cat === 'image' || cat === 'video')
 
   return (
     <article style={card.root}>
-      <div style={{ ...card.thumb, background: MIME_GRADIENTS[cat] }}>
-        <Icon size={32} strokeWidth={1.5} />
+      <div style={{ ...card.thumb, background: hasPreview ? '#111' : MIME_GRADIENTS[cat] }}>
+        {hasPreview ? (
+          cat === 'image' ? (
+            <img src={asset.publicUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <video src={asset.publicUrl} muted playsInline preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          )
+        ) : (
+          <Icon size={32} strokeWidth={1.5} />
+        )}
         <span style={{ ...card.badge, ...(asset.published ? card.badgePublished : card.badgeDraft) }}>
           {asset.published ? 'Live' : 'Draft'}
         </span>
