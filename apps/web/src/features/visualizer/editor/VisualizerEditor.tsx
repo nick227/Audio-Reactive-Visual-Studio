@@ -4,14 +4,10 @@ import { toast } from 'sonner'
 import { Captions, Download, Loader2, Maximize2, Minimize2, Pause, Play, Plus, Upload, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import { useCurrentUser, useCreateProject, useUpdateProject } from '@avl/sdk'
-import { AudioEngine } from '../audio/AudioEngine'
-import { buildWaveformPeaks } from '../audio/waveform'
-import type { AudioFeatures } from '../audio/audioTypes'
-import { silentAudioFeatures } from '../audio/audioTypes'
 import { createDefaultProject } from '../project/defaultProject'
 import { clearSavedProject } from '../project/projectPersistence'
 import type { Project, StagePresetId } from '../project/types'
-import { createEntityId, nowIso } from '../entities/entityTypes'
+import { nowIso } from '../entities/entityTypes'
 import { isTypographyLayer } from '../runtime/layerVisualKind'
 import { Stage, type StageHandle } from './Stage'
 import { Waveform } from './Waveform'
@@ -56,8 +52,7 @@ import { useEditorPersistence } from './hooks/useEditorPersistence'
 import { useManagedObjectUrls } from './hooks/useManagedObjectUrls'
 import { useMediaLibrary } from './hooks/useMediaLibrary'
 import { useLayerActions } from './hooks/useLayerActions'
-
-const UI_FRAME_INTERVAL_MS = 100
+import { useEditorPlayback } from './hooks/useEditorPlayback'
 
 function cloneProject(p: Project): Project {
   return structuredClone(p)
@@ -137,10 +132,6 @@ export function VisualizerEditor() {
   // ────────────────────────────────────────────────────────────────────────
 
   const [selectedLayerId, setSelectedLayerId] = useState(() => project.layers[project.layers.length - 1]?.id ?? '')
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [meterFeatures, setMeterFeatures] = useState<AudioFeatures>(silentAudioFeatures)
-  const [peaks, setPeaks] = useState<number[]>(new Array(160).fill(0.12))
-  const [progress, setProgress] = useState(0)
   const { modal, closeModal, openMediaModal, openSubtitleModal: showSubtitleModal, openVideoSettingsModal, openExportModal } = useEditorModal()
   const [isExporting, setIsExporting] = useState(false)
   const [isPreparing, setIsPreparing] = useState(false)
@@ -155,16 +146,19 @@ export function VisualizerEditor() {
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [fsUiIdle, setFsUiIdle] = useState(false)
   const fsIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [currentTimeMs, setCurrentTimeMs] = useState(0)
-  const playbackTimeMsRef = useRef(0)
   const exportActiveRef = useRef(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const engineRef = useRef<AudioEngine | null>(null)
-  const rafRef = useRef<number | null>(null)
   const stageRef = useRef<StageHandle | null>(null)
-  const lastUiFrameRef = useRef(0)
   const { activeAudioObjectUrlRef, registerObjectUrl, revokeManagedObjectUrl, revokeAllObjectUrls } = useManagedObjectUrls()
-  const tickRef = useRef<(time: number) => void>(() => {})
+  const playback = useEditorPlayback({
+    project,
+    patchPresent,
+    commitProject,
+    stageRef,
+    exportActiveRef,
+    activeAudioObjectUrlRef,
+    registerObjectUrl,
+    revokeManagedObjectUrl,
+  })
   const exportCancelRef = useRef(false)
   const exportAbortRef = useRef<AbortController | null>(null)
 
@@ -197,11 +191,11 @@ export function VisualizerEditor() {
     project,
     patchPresent,
     commitProject,
-    audioRef,
+    audioRef: playback.audioRef,
     activeAudioObjectUrlRef,
     registerObjectUrl,
     setSelectedLayerId,
-    setPeaks,
+    setPeaks: playback.setPeaks,
     closeModal,
   })
   const layerActions = useLayerActions({
@@ -283,7 +277,7 @@ export function VisualizerEditor() {
 
           if (!manifest.nativeRenderer || abort.signal.aborted || revision !== prerenderRevisionRef.current) return
 
-          const queue = prioritizeDirtyChunks(chunks, dirty, playbackTimeMsRef.current, durationMs).slice(0, 8)
+          const queue = prioritizeDirtyChunks(chunks, dirty, playback.playbackTimeMsRef.current, durationMs).slice(0, 8)
           for (const item of queue) {
             if (abort.signal.aborted || revision !== prerenderRevisionRef.current) return
             const identity = identities.get(item.chunk.index)
@@ -333,13 +327,6 @@ export function VisualizerEditor() {
     rendererDiagnostics.mode,
     updatePrerenderStats,
   ])
-
-  const syncStageFrame = useCallback((timeMs: number) => {
-    playbackTimeMsRef.current = timeMs
-    const engine = engineRef.current
-    const features = engine?.getFeatures() ?? silentAudioFeatures
-    stageRef.current?.updateFrame(features, performance.now(), timeMs)
-  }, [])
 
   const activeStagePreset = useMemo(
     () => getActiveStagePresetId(project.stage.width, project.stage.height),
@@ -439,11 +426,8 @@ export function VisualizerEditor() {
   }, [isFullScreen])
 
   useEffect(() => {
-    const audio = audioRef.current
     const prerenderCache = prerenderCacheRef.current
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      audio?.pause()
       prerenderCache.clear()
     }
   }, [])
@@ -463,16 +447,9 @@ export function VisualizerEditor() {
 
   // ── Project-level operations ─────────────────────────────────────────────────
 
-  const stopPlayback = useCallback(() => {
-    audioRef.current?.pause()
-    setIsPlaying(false)
-    if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    rafRef.current = null
-  }, [])
-
   const resetProject = useCallback(() => {
     if (!window.confirm('Start a new project? All layers and unsaved changes will be cleared.')) return
-    stopPlayback()
+    playback.stopPlayback()
     // Cleanup IDB entries for uploaded files in the current project
     for (const layer of project.layers) {
       if (typeof layer.settings.srcKey === 'string') void idbDelete(String(layer.settings.srcKey))
@@ -480,25 +457,23 @@ export function VisualizerEditor() {
     if (project.audio?.fileKey) void idbDelete(project.audio.fileKey)
     clearSavedProject()
     revokeAllObjectUrls()
-    if (audioRef.current) audioRef.current.src = ''
+    if (playback.audioRef.current) playback.audioRef.current.src = ''
     const fresh = createDefaultProject()
     resetHistory(fresh)
     setSelectedLayerId(fresh.layers[fresh.layers.length - 1]?.id ?? '')
-    setPeaks(new Array(160).fill(0.12))
-    setProgress(0)
-    setIsPlaying(false)
+    playback.resetPlaybackUi()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.audio?.fileKey, project.layers])
 
   const exportPng = useCallback(async (title: string) => {
     const stageEl = stageRef.current?.getStageElement()
-    const audio = audioRef.current
+    const audio = playback.audioRef.current
     if (!stageEl) return
     persistExportTitle(title)
     setIsExporting(true)
     try {
       const ms = (audio?.currentTime ?? 0) * 1000
-      syncStageFrame(ms)
+      playback.syncStageFrame(ms)
       const scale = project.stage.width / stageEl.offsetWidth
       const canvas = await html2canvas(stageEl, { scale, useCORS: true, allowTaint: true, logging: false })
       const url = canvas.toDataURL('image/png')
@@ -509,101 +484,11 @@ export function VisualizerEditor() {
     } finally {
       setIsExporting(false)
     }
-  }, [persistExportTitle, project.stage.width, suggestedExportTitle, syncStageFrame])
-
-  // ── Audio ────────────────────────────────────────────────────────────────────
-
-  const handleAudioFile = async (file: File) => {
-    const audio = audioRef.current
-    if (!audio) return
-    stopPlayback()
-
-    if (activeAudioObjectUrlRef.current) revokeManagedObjectUrl(activeAudioObjectUrlRef.current)
-    if (project.audio?.fileKey) void idbDelete(project.audio.fileKey)
-
-    const url = registerObjectUrl(URL.createObjectURL(file))
-    activeAudioObjectUrlRef.current = url
-
-    const fileKey = `aud_${Date.now()}_${file.name}`
-    try { await idbPut(fileKey, file) } catch { /* IDB unavailable */ }
-
-    const audioEntity = {
-      id: createEntityId('audio'),
-      kind: 'audio-track' as const,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      url,
-      filename: file.name,
-      duration: 0,
-      fileKey,
-    }
-
-    commitProject((current) => ({ ...current, audio: audioEntity }))
-    setProgress(0)
-
-    audio.onloadedmetadata = () => {
-      // Duration is auto-detected, not a user action — patch present without pushing to history.
-      patchPresent((current) => ({
-        ...current,
-        audio: current.audio ? { ...current.audio, duration: audio.duration || 0, updatedAt: nowIso() } : audioEntity,
-      }))
-    }
-    audio.src = url
-    audio.load()
-
-    const nextPeaks = await buildWaveformPeaks(file)
-    setPeaks(nextPeaks)
-  }
-
-  const tick = (time: number) => {
-    const audio = audioRef.current
-    const engine = engineRef.current
-    if (!audio || !engine) return
-
-    const features = engine.getFeatures()
-    const playbackMs = audio.currentTime * 1000
-    playbackTimeMsRef.current = playbackMs
-    stageRef.current?.updateFrame(features, time, playbackMs)
-
-    if (!exportActiveRef.current && time - lastUiFrameRef.current >= UI_FRAME_INTERVAL_MS) {
-      lastUiFrameRef.current = time
-      setMeterFeatures(features)
-      setProgress(audio.duration ? audio.currentTime / audio.duration : 0)
-      setCurrentTimeMs(playbackMs)
-    }
-
-    if (!audio.paused) rafRef.current = requestAnimationFrame(tickRef.current)
-  }
-  tickRef.current = tick
-
-  const togglePlayback = useCallback(async () => {
-    const audio = audioRef.current
-    if (!audio || !audio.src) return
-    engineRef.current ??= new AudioEngine()
-    engineRef.current.connect(audio)
-    await engineRef.current.resume()
-    if (audio.paused) {
-      await audio.play()
-      setIsPlaying(true)
-      rafRef.current = requestAnimationFrame(tickRef.current)
-    } else {
-      stopPlayback()
-    }
-  }, [stopPlayback])
-  togglePlaybackRef.current = () => { void togglePlayback() }
-
-  const seek = (ratio: number) => {
-    const audio = audioRef.current
-    if (!audio || !audio.duration) return
-    audio.currentTime = ratio * audio.duration
-    const ms = audio.currentTime * 1000
-    setProgress(ratio)
-    setCurrentTimeMs(ms)
-    syncStageFrame(ms)
-  }
+  }, [persistExportTitle, playback, project.stage.width, suggestedExportTitle])
+  togglePlaybackRef.current = () => { void playback.togglePlayback() }
 
   const exportWebm = useCallback(async (snapshot: Project, preset: ExportPreset) => {
-    const audio = audioRef.current
+    const audio = playback.audioRef.current
     const stageEl = stageRef.current?.getStageElement()
     if (!audio || !stageEl || !snapshot.audio?.duration) return
     const duration = snapshot.audio.duration
@@ -626,8 +511,8 @@ export function VisualizerEditor() {
 
     // html2canvas render — used when compat mode is chosen by the manifest.
     const renderCompat = async (timeMs: number) => {
-      setCurrentTimeMs(timeMs)
-      syncStageFrame(timeMs)
+      playback.setCurrentTimeMs(timeMs)
+      playback.syncStageFrame(timeMs)
       try {
         const frame = await html2canvas(stageEl, { scale: 1, useCORS: true, allowTaint: true, logging: false })
         ctx.drawImage(frame, 0, 0, outputW, outputH)
@@ -801,13 +686,11 @@ export function VisualizerEditor() {
       ).find((t) => MediaRecorder.isTypeSupported(t)) ?? 'video/webm'
 
       audio.currentTime = 0
-      engineRef.current ??= new AudioEngine()
-      engineRef.current.connect(audio)
-      await engineRef.current.resume()
-      engineRef.current.setOutputMuted(true)
+      const engine = await playback.ensureAudioEngine(audio)
+      engine.setOutputMuted(true)
 
       const videoTracks = outputCanvas.captureStream(preset.fps).getTracks()
-      const audioStream = engineRef.current.getAudioStream()
+      const audioStream = engine.getAudioStream()
       const recordStream = audioStream
         ? new MediaStream([...videoTracks, ...audioStream.getTracks()])
         : new MediaStream(videoTracks)
@@ -819,14 +702,14 @@ export function VisualizerEditor() {
       try {
         recorder.start(250)
         await audio.play()
-        setIsPlaying(true)
-        rafRef.current = requestAnimationFrame(tickRef.current)
+        playback.setIsPlaying(true)
+        playback.rafRef.current = requestAnimationFrame(playback.tickRef.current)
 
         while (!exportCancelRef.current && !audio.ended && audio.currentTime < duration) {
           try {
             const frameMs = audio.currentTime * 1000
-            setCurrentTimeMs(frameMs)
-            syncStageFrame(frameMs)
+            playback.setCurrentTimeMs(frameMs)
+            playback.syncStageFrame(frameMs)
             const frame = await html2canvas(stageEl, { scale: 1, useCORS: true, allowTaint: true, logging: false })
             ctx.drawImage(frame, 0, 0, outputW, outputH)
           } catch { /* skip frame */ }
@@ -834,7 +717,7 @@ export function VisualizerEditor() {
           await new Promise<void>((r) => setTimeout(r, 0))
         }
 
-        stopPlayback()
+        playback.stopPlayback()
         await new Promise<void>((r) => {
           recorder.addEventListener('stop', () => r(), { once: true })
           recorder.stop()
@@ -857,11 +740,11 @@ export function VisualizerEditor() {
           setTimeout(() => URL.revokeObjectURL(url), 30_000)
         }
       } finally {
-        engineRef.current?.setOutputMuted(false)
+        playback.engineRef.current?.setOutputMuted(false)
         cleanup()
       }
     }
-  }, [openExportModal, stopPlayback, syncStageFrame])
+  }, [openExportModal, playback])
 
   const beginExportWebm = useCallback((title: string, preset: ExportPreset) => {
     const name = title.trim() || suggestedExportTitle
@@ -909,7 +792,7 @@ export function VisualizerEditor() {
       className={`app-shell${isFullScreen ? ' full-screen' : ''}${isFullScreen && fsUiIdle ? ' fs-ui-idle' : ''}`}
       onPointerMove={isFullScreen ? resetFsIdleTimer : undefined}
     >
-      <audio ref={audioRef} onEnded={() => { setIsPlaying(false); setProgress(1) }} />
+      <audio ref={playback.audioRef} onEnded={playback.onAudioEnded} />
 
       {!isFullScreen && (
         <SiteTopBar
@@ -944,7 +827,7 @@ export function VisualizerEditor() {
               ref={stageRef}
               project={stageProject}
               selectedLayerId={selectedLayerId}
-              isPlaying={isPlaying}
+              isPlaying={playback.isPlaying}
               onSelectLayer={(id) => {
                 setSelectedLayerId(id)
                 if (id !== textEditLayerIdRef.current) setTextEditLayerId(null)
@@ -955,23 +838,23 @@ export function VisualizerEditor() {
               editingLayerId={textEditLayerId}
               onTextChange={handleTextChange}
               onTextCommit={handleTextCommit}
-              currentTimeMs={currentTimeMs}
+              currentTimeMs={playback.currentTimeMs}
             />
           </div>
         </div>
 
         {/* ── Transport ── */}
         <div className="transport">
-          <button className="transport-play" onClick={() => void togglePlayback()} disabled={!hasAudio} aria-label={isPlaying ? 'Pause' : 'Play'}>
-            {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+          <button className="transport-play" onClick={() => void playback.togglePlayback()} disabled={!hasAudio} aria-label={playback.isPlaying ? 'Pause' : 'Play'}>
+            {playback.isPlaying ? <Pause size={15} /> : <Play size={15} />}
           </button>
           <div className="transport-waveform">
-            <Waveform peaks={peaks} progress={progress} onSeek={seek} />
+            <Waveform peaks={playback.peaks} progress={playback.progress} onSeek={playback.seek} />
           </div>
           <label className="transport-audio-label" title={hasAudio ? project.audio?.filename : 'Upload audio'}>
             <Upload size={13} />
             <span>{hasAudio ? project.audio!.filename : 'Add Audio'}</span>
-            <input type="file" accept="audio/*" hidden onChange={(e) => e.target.files?.[0] && void handleAudioFile(e.target.files[0])} />
+            <input type="file" accept="audio/*" hidden onChange={(e) => e.target.files?.[0] && void playback.handleAudioFile(e.target.files[0])} />
           </label>
         </div>
 
@@ -998,7 +881,7 @@ export function VisualizerEditor() {
               layers={project.layers}
               selectedLayerId={selectedLayerId}
               durationMs={(project.audio?.duration ?? 0) * 1000}
-              currentTimeMs={currentTimeMs}
+              currentTimeMs={playback.currentTimeMs}
               onSelect={setSelectedLayerId}
               onUpdate={layerActions.updateLayer}
               onUpdateTransient={layerActions.updateLayerTransient}
@@ -1035,7 +918,7 @@ export function VisualizerEditor() {
             onSave={(cues) => layerActions.updateSubtitleLayerCues(modal.layerId, cues)}
             editingLayer={editingLayer}
             onUpdateLayer={(patch) => layerActions.updateLayer(modal.layerId, patch)}
-            waveformPeaks={peaks}
+            waveformPeaks={playback.peaks}
             audioSrc={project.audio?.url ?? null}
             audioDuration={project.audio?.duration ?? 0}
           />
