@@ -93,13 +93,13 @@ async function main() {
   })
 
   server.get('/media/community/*', async (request, reply) => {
-    const fileKey = decodeURIComponent((request.params as { '*': string })['*'])
-    if (mediaStorage.isCloudStorage()) {
-      return reply.redirect(mediaStorage.getPublicUrl(fileKey))
-    }
+    const fileKey = (request.params as { '*': string })['*']
     try {
-      const stream = mediaStorage.openLocalStream(fileKey)
-      return reply.send(stream)
+      const { stream, contentType } = await mediaStorage.openObject(fileKey)
+      return reply
+        .header('Cross-Origin-Resource-Policy', 'cross-origin')
+        .type(contentType)
+        .send(stream)
     } catch {
       return reply.status(404).send({ error: 'Not found' })
     }

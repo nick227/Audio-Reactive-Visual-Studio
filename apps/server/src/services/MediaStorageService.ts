@@ -1,7 +1,7 @@
 import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync, unlinkSync } from 'fs'
 import { dirname, join } from 'path'
 import { randomBytes } from 'crypto'
-import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 
 const UPLOAD_ROOT = join(process.cwd(), 'uploads', 'community')
 
@@ -32,6 +32,20 @@ function s3Client() {
   })
 }
 
+function contentTypeFromKey(fileKey: string) {
+  const ext = fileKey.split('.').pop()?.toLowerCase()
+  if (ext === 'png') return 'image/png'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'gif') return 'image/gif'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'svg') return 'image/svg+xml'
+  if (ext === 'mp4') return 'video/mp4'
+  if (ext === 'webm') return 'video/webm'
+  if (ext === 'mp3') return 'audio/mpeg'
+  if (ext === 'wav') return 'audio/wav'
+  return 'application/octet-stream'
+}
+
 export class MediaStorageService {
   isCloudStorage() {
     return r2Configured()
@@ -42,15 +56,12 @@ export class MediaStorageService {
     return `community/${userId}/${randomBytes(8).toString('hex')}-${safe}`
   }
 
+  /** API-proxied URL — required for COEP pages (Vite sets require-corp). */
   getPublicUrl(fileKey: string) {
-    if (r2Configured() && process.env.R2_PUBLIC_BASE_URL) {
-      return `${process.env.R2_PUBLIC_BASE_URL.replace(/\/$/, '')}/${fileKey}`
-    }
-    const base = serverBase()
-    return `${base}/media/community/${encodeURIComponent(fileKey)}`
+    const encoded = fileKey.split('/').map(encodeURIComponent).join('/')
+    return `${serverBase()}/media/community/${encoded}`
   }
 
-  /** Browser uploads go through the API (avoids R2 bucket CORS). */
   createUploadUrl(fileKey: string) {
     return `${serverBase()}/internal/community-upload/${encodeURIComponent(fileKey)}`
   }
@@ -114,6 +125,24 @@ export class MediaStorageService {
 
   openLocalStream(fileKey: string) {
     return createReadStream(this.localPath(fileKey))
+  }
+
+  async openObject(fileKey: string): Promise<{ stream: NodeJS.ReadableStream; contentType: string }> {
+    if (r2Configured()) {
+      const result = await s3Client().send(new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME!,
+        Key: fileKey,
+      }))
+      if (!result.Body) throw new Error('Empty object body')
+      return {
+        stream: result.Body as NodeJS.ReadableStream,
+        contentType: result.ContentType ?? contentTypeFromKey(fileKey),
+      }
+    }
+    return {
+      stream: this.openLocalStream(fileKey),
+      contentType: contentTypeFromKey(fileKey),
+    }
   }
 
   localSize(fileKey: string) {
