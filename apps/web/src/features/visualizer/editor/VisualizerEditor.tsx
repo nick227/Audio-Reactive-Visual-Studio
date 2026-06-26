@@ -24,6 +24,7 @@ import { usePrerenderCache } from './hooks/usePrerenderCache'
 import { useEditorExport } from './hooks/useEditorExport'
 import { useProjectLibrary } from './hooks/useProjectLibrary'
 import { useProjectTitleSync } from './hooks/useProjectTitleSync'
+import { saveProjectToLibrary } from '../project/projectLibrary'
 import { SiteTopBar } from '../../../components/SiteTopBar'
 
 export function VisualizerEditor() {
@@ -129,8 +130,13 @@ export function VisualizerEditor() {
   })
 
   const renameProject = useCallback((name: string) => {
-    commitProject((current) => ({ ...current, name, updatedAt: nowIso() }))
-  }, [commitProject])
+    commitProject((current) => {
+      const next = { ...current, name, updatedAt: nowIso() }
+      saveProjectToLibrary(next)
+      return next
+    })
+    projectLibrary.refreshProjects()
+  }, [commitProject, projectLibrary])
 
   const activeStagePreset = useMemo(
     () => getActiveStagePresetId(project.stage.width, project.stage.height),

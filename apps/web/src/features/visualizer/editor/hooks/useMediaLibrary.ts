@@ -46,6 +46,9 @@ export function useMediaLibrary({
     setSessionUploads([])
     setSessionVideos([])
 
+    const targetProjectId = project.id
+    let cancelled = false
+
     async function restoreBlobs() {
       let anyChanged = false
       const restoredUploads: MediaLibraryItem[] = []
@@ -89,15 +92,23 @@ export function useMediaLibrary({
         }
       }
 
+      if (cancelled) return
+
       if (restoredUploads.length) setSessionUploads(restoredUploads)
       if (restoredVideos.length) setSessionVideos(restoredVideos)
 
       if (anyChanged) {
-        patchPresent((current) => ({ ...current, layers: restoredLayers, audio: restoredAudio }))
+        patchPresent((current) => {
+          if (current.id !== targetProjectId) return current
+          return { ...current, layers: restoredLayers, audio: restoredAudio }
+        })
       }
     }
 
     void restoreBlobs()
+    return () => {
+      cancelled = true
+    }
   }, [activeAudioObjectUrlRef, audioRef, patchPresent, project, project.id, registerObjectUrl, setPeaks])
 
   const addUploadedImage = useCallback(async (file: File) => {

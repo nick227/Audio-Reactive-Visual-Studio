@@ -156,3 +156,54 @@ export function getActiveProjectMeta(): ProjectIndexEntry | null {
   const id = getActiveProjectId()
   return readIndex().find((item) => item.id === id) ?? null
 }
+
+/** IDB blob keys referenced by a project document (audio + layer uploads). */
+export function collectProjectBlobKeys(project: Project): string[] {
+  const keys = new Set<string>()
+  if (project.audio?.fileKey) keys.add(project.audio.fileKey)
+  for (const layer of project.layers) {
+    const srcKey = layer.settings.srcKey
+    if (typeof srcKey === 'string' && srcKey) keys.add(srcKey)
+  }
+  return Array.from(keys)
+}
+
+function collectAllReferencedBlobKeys(excludeProjectId?: string): Set<string> {
+  const keys = new Set<string>()
+  for (const entry of readIndex()) {
+    if (entry.id === excludeProjectId) continue
+    const doc = loadProjectById(entry.id)
+    if (!doc) continue
+    for (const key of collectProjectBlobKeys(doc)) keys.add(key)
+  }
+  return keys
+}
+
+/** Removes a project from the library and deletes IDB blobs no longer referenced elsewhere. */
+export async function deleteProjectFromLibrary(
+  id: string,
+  idbDelete: (key: string) => Promise<void>,
+): Promise<boolean> {
+  ensureMigrated()
+  const index = readIndex()
+  if (!index.some((item) => item.id === id)) return false
+
+  const doomed = loadProjectById(id)
+  const stillReferenced = collectAllReferencedBlobKeys(id)
+  const orphanKeys = doomed
+    ? collectProjectBlobKeys(doomed).filter((key) => !stillReferenced.has(key))
+    : []
+
+  localStorage.removeItem(projectStorageKey(id))
+  writeIndex(index.filter((item) => item.id !== id))
+
+  const remaining = readIndex()
+  if (getActiveProjectId() === id) {
+    const nextId = remaining[0]?.id
+    if (nextId) setActiveProjectId(nextId)
+    else localStorage.removeItem(ACTIVE_KEY)
+  }
+
+  await Promise.all(orphanKeys.map((key) => idbDelete(key).catch(() => {})))
+  return true
+}
