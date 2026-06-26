@@ -9,7 +9,7 @@ import { buildWaveformPeaks } from '../audio/waveform'
 import type { AudioFeatures } from '../audio/audioTypes'
 import { silentAudioFeatures } from '../audio/audioTypes'
 import { createDefaultProject } from '../project/defaultProject'
-import { clearSavedProject, loadLocalSaveMeta, loadSavedProject, saveProject } from '../project/projectPersistence'
+import { clearSavedProject, loadLocalSaveMeta, saveProject } from '../project/projectPersistence'
 import type { LayerInstance, Project, StagePresetId } from '../project/types'
 import { assetRegistry } from '../assets/registry'
 import { createEntityId, nowIso } from '../entities/entityTypes'
@@ -48,19 +48,11 @@ import {
   type CachedChunkStats,
   type RenderChunkIdentity,
 } from '../prerender'
-import {
-  commitHistory,
-  MAX_HISTORY,
-  patchHistoryPresent,
-  redoHistory,
-  resetHistory,
-  type HistoryState,
-  undoHistory,
-} from './core/history'
 import { applyLayerPatch } from './core/layerPatch'
 import { getActiveStagePresetId, stagePresets } from './core/stagePresets'
 import { clearLastExportMeta, loadLastExportMeta, saveLastExportMeta, type LastExportMeta } from './core/exportMeta'
 import { useEditorModal } from './hooks/useEditorModal'
+import { useEditorHistory } from './hooks/useEditorHistory'
 
 const UI_FRAME_INTERVAL_MS = 100
 
@@ -85,12 +77,7 @@ function waitForPrerenderIdle(signal: AbortSignal): Promise<void> {
 }
 
 export function VisualizerEditor() {
-  const [history, setHistory] = useState<HistoryState>(() => ({
-    past: [],
-    present: loadSavedProject() ?? createDefaultProject(),
-    future: [],
-  }))
-  const project = history.present
+  const { present: project, patchPresent, commitProject, undo, redo, resetHistory } = useEditorHistory()
 
   // ── Cloud save ───────────────────────────────────────────────────────────
   const { data: meData } = useCurrentUser()
@@ -365,26 +352,6 @@ export function VisualizerEditor() {
     return () => document.removeEventListener('pointerdown', handler)
   }, [])
 
-  // ── History operations ──────────────────────────────────────────────────────
-
-  // Updates present without touching past/future — used for live drag updates.
-  const patchPresent = useCallback((recipe: (current: Project) => Project) => {
-    setHistory((h) => patchHistoryPresent(h, recipe))
-  }, [])
-
-  // Commits a change to history. Clears the redo stack.
-  const commitProject = useCallback((recipe: (current: Project) => Project) => {
-    setHistory((h) => commitHistory(h, recipe))
-  }, [])
-
-  const undo = useCallback(() => {
-    setHistory(undoHistory)
-  }, [])
-
-  const redo = useCallback(() => {
-    setHistory(redoHistory)
-  }, [])
-
   const persistExportTitle = useCallback((title: string) => {
     const name = title.trim() || suggestedExportTitle
     if (name === project.name) return
@@ -546,7 +513,7 @@ export function VisualizerEditor() {
 
       if (anyChanged) {
         // Patch present only — blob restoration is not a user action.
-        setHistory((h) => ({ ...h, present: { ...h.present, layers: restoredLayers, audio: restoredAudio } }))
+        patchPresent((current) => ({ ...current, layers: restoredLayers, audio: restoredAudio }))
       }
     }
     void restoreBlobs()
@@ -604,12 +571,8 @@ export function VisualizerEditor() {
 
   // Snapshots present into past before a drag starts, so the full drag is one undo step.
   const snapshotForDrag = useCallback(() => {
-    setHistory((h) => ({
-      past: [...h.past.slice(-(MAX_HISTORY - 1)), h.present],
-      present: h.present,
-      future: [],
-    }))
-  }, [])
+    commitProject((current) => current)
+  }, [commitProject])
 
   const addTemplate = useCallback((templateId: string) => {
     const template = assetRegistry.get(templateId)
@@ -721,7 +684,7 @@ export function VisualizerEditor() {
     activeAudioObjectUrlRef.current = null
     if (audioRef.current) audioRef.current.src = ''
     const fresh = createDefaultProject()
-    setHistory(resetHistory(fresh))
+    resetHistory(fresh)
     setSelectedLayerId(fresh.layers[fresh.layers.length - 1]?.id ?? '')
     setPeaks(new Array(160).fill(0.12))
     setProgress(0)
