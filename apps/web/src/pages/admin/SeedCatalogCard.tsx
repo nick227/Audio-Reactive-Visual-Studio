@@ -1,3 +1,4 @@
+import { AssetThumbnail } from '../../features/visualizer/editor/AssetThumbnail'
 import type { SeedFxItem, SeedImageItem, SeedVideoItem } from './catalogItems'
 
 type Props = {
@@ -25,14 +26,11 @@ const card: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
   thumbFx: {
+    position: 'relative',
     aspectRatio: '16 / 10',
-    background: 'var(--purple-dim)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '1.1rem',
-    fontWeight: 700,
-    color: 'var(--purple-light)',
+    background: '#11111c',
+    overflow: 'hidden',
+    isolation: 'isolate',
   },
   media: { width: '100%', height: '100%', objectFit: 'cover' },
   body: { padding: '0.75rem 0.875rem', display: 'flex', flexDirection: 'column', gap: '0.375rem', flex: 1 },
@@ -59,7 +57,7 @@ export function SeedCatalogCard({ item, enabled, pending, onToggle }: Props) {
     <article style={{ ...card.root, ...(!enabled ? card.rootDisabled : {}) }}>
       {item.kind === 'fx' ? (
         <div style={card.thumbFx}>
-          {item.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+          <AssetThumbnail settings={item.settings} />
         </div>
       ) : (
         <div style={card.thumb}>

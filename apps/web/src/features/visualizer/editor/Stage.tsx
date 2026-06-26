@@ -199,7 +199,7 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
     if (!stageBounds) return
 
     // Build the move handler; early-return before committing to capture/drag.
-    let move = (_e: PointerEvent) => {}
+    let move: (e: PointerEvent) => void = () => {}
 
     if (isSubtitle) {
       // Subtitle resize: drag side handles to set cue width as % of stage.
@@ -269,12 +269,13 @@ const StageLayer = memo(function StageLayer({ layer, selected, stageWidth, stage
     const startClientY = event.clientY
     let dragging = false
 
-    let move = (_e: PointerEvent) => {}
-    const cleanup = () => {
+    let move: (e: PointerEvent) => void = () => {}
+    const cleanup = (e: PointerEvent) => {
       document.body.style.userSelect = ''
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', cleanup)
       window.removeEventListener('pointercancel', cleanup)
+      if (e.type === 'pointerup' && !dragging && selected && isTypography && !isEditing) onDoubleClick?.(layer.id)
     }
 
     if (isSubtitle) {
@@ -530,14 +531,14 @@ function ParticleLayer({ color, kind, density }: ParticleLayerProps) {
       {Array.from({ length: count }).map((_, i) => (
         <b
           key={i}
-          style={particleStyle(kind, i, count)}
+          style={particleStyle(kind, i)}
         />
       ))}
     </div>
   )
 }
 
-function particleStyle(kind: string, i: number, _count: number): CSSProperties {
+function particleStyle(kind: string, i: number): CSSProperties {
   const s = 4 + (i % 6)
   const base: CSSProperties = {
     left: `${(i * 37) % 100}%`,
@@ -635,10 +636,14 @@ function TypographyLayerEditing({ layer, onTextChange, onTextCommit }: { layer: 
   const color = String(layer.settings.color ?? '#ffffff')
   const editRef = useRef<HTMLDivElement>(null)
   const initialText = useRef(String(layer.settings.text ?? ''))
+  const layerIdRef = useRef(layer.id)
+  const onTextCommitRef = useRef(onTextCommit)
+  onTextCommitRef.current = onTextCommit
 
   useEffect(() => {
     const el = editRef.current
     if (!el) return
+    el.innerText = initialText.current
     el.focus()
     const range = document.createRange()
     range.selectNodeContents(el)
@@ -650,6 +655,10 @@ function TypographyLayerEditing({ layer, onTextChange, onTextCommit }: { layer: 
   const currentText = () => editRef.current?.innerText ?? initialText.current
   const commit = () => onTextCommit?.(layer.id, currentText())
 
+  useEffect(() => () => {
+    onTextCommitRef.current?.(layerIdRef.current, editRef.current?.innerText ?? initialText.current)
+  }, [])
+
   return (
     <div
       ref={editRef}
@@ -657,10 +666,12 @@ function TypographyLayerEditing({ layer, onTextChange, onTextCommit }: { layer: 
       style={{ color, outline: 'none', cursor: 'text', userSelect: 'text' }}
       contentEditable
       suppressContentEditableWarning
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: initialText.current }}
       onPointerDown={(e) => e.stopPropagation()}
       onInput={(e) => onTextChange?.(layer.id, e.currentTarget.innerText)}
+      onPaste={(e) => {
+        e.preventDefault()
+        document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
+      }}
       onKeyDown={(e) => {
         e.stopPropagation()
         if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) { e.preventDefault(); commit() }

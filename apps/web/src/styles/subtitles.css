@@ -200,16 +200,7 @@
   box-shadow: 0 0 0 2px rgba(140,108,255,.15);
 }
 .srt-lyrics-input::placeholder { color: var(--text-ghost); }
-.srt-lyrics-actions { display: flex; align-items: center; gap: 12px; justify-content: flex-start; }
-.srt-convert-success { font-size: 11px; color: var(--success, #3dff88); font-weight: 600; }
-.srt-convert-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: var(--radius-md); border: none;
-  background: var(--white-10); color: #fff;
-  font-size: 12px; font-weight: 600; cursor: pointer;
-}
-.srt-convert-btn:hover:not(:disabled) { background: rgba(255,255,255,.16); }
-.srt-convert-btn:disabled { opacity: .4; cursor: default; }
+.srt-lyrics-success { font-size: 11px; color: var(--success, #3dff88); font-weight: 600; }
 .srt-secondary-btn {
   padding: 8px 14px; border-radius: var(--radius-md);
   border: 1px solid rgba(255,255,255,.18);

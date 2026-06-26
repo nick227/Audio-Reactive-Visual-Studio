@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlignLeft, Bot, Download, FileText, Loader, Mic2, Palette, Plus, Trash2, Wand2, X } from 'lucide-react'
+import { AlignLeft, Bot, Download, FileText, Loader, Mic2, Palette, Plus, Trash2, X } from 'lucide-react'
 import { parseSrt, displayToMs, msToDisplay, formatSrt, MAX_SRT_CUES } from '../subtitles/parseSrt'
 import type { SrtCue } from '../subtitles/parseSrt'
 import { lyricsToSrt, srtToLyrics } from '../subtitles/lyricsToSrt'
 import { DEFAULT_SUBTITLE_WIDTH, MAX_SUBTITLE_WIDTH, MIN_SUBTITLE_WIDTH } from '../subtitles/layout'
 import type { LayerInstance, SubtitleStyle } from '../project/types'
 import { getApiBaseUrl } from '../../../lib/apiBaseUrl'
+import { idbGet } from '../storage/idbStorage'
 
 type TabId = 'lyrics' | 'import' | 'ai' | 'style'
 
@@ -16,6 +17,7 @@ type Props = {
   onUpdateLayer: (patch: Partial<LayerInstance>) => void
   waveformPeaks: number[]
   audioSrc: string | null
+  audioFileKey?: string
   audioDuration: number
 }
 
@@ -90,16 +92,14 @@ function LyricsTab({
   rawLyrics,
   onRawLyricsChange,
   audioDuration,
-  onCuesChange,
   onApply,
 }: {
   rawLyrics: string
   onRawLyricsChange: (raw: string) => void
   audioDuration: number
-  onCuesChange: (cues: SrtCue[]) => void
   onApply: (cues: SrtCue[]) => void
 }) {
-  const [converted, setConverted] = useState<SrtCue[] | null>(null)
+  const [appliedCount, setAppliedCount] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const durationMs = audioDuration > 0 ? audioDuration * 1000 : 0
@@ -109,21 +109,21 @@ function LyricsTab({
 
   const handleTextChange = (val: string) => {
     onRawLyricsChange(val)
-    setConverted(null)
+    setAppliedCount(null)
     setError(null)
   }
 
-  const handleConvert = () => {
+  const handleApply = () => {
     const trimmed = rawLyrics.trim()
-    if (!trimmed) { setError('Paste or type your lyrics first.'); setConverted(null); return }
+    if (!trimmed) { setError('Paste or type your lyrics first.'); setAppliedCount(null); return }
 
     const fromSrt = trimmed.includes('-->') ? parseSrt(trimmed) : []
     const result = fromSrt.length > 0 ? fromSrt : lyricsToSrt(trimmed, { durationMs })
 
-    if (result.length === 0) { setError('Could not split text into lines.'); setConverted(null); return }
+    if (result.length === 0) { setError('Could not split text into lines.'); setAppliedCount(null); return }
 
-    onCuesChange(result)
-    setConverted(result)
+    onApply(result)
+    setAppliedCount(result.length)
     setError(null)
   }
 
@@ -140,22 +140,16 @@ function LyricsTab({
         spellCheck={false}
       />
 
-      <div className="srt-lyrics-actions">
-        <button type="button" className="srt-convert-btn" onClick={handleConvert} disabled={!rawLyrics.trim()}>
-          <Wand2 size={13} /> Convert
-        </button>
-        {converted && (
-          <span className="srt-convert-success">{converted.length} cues generated</span>
-        )}
-      </div>
-
       {error && <p className="srt-error">{error}</p>}
+      {appliedCount !== null && (
+        <span className="srt-lyrics-success">{appliedCount} cues applied</span>
+      )}
 
       <div className="srt-tab-actions">
         <button
           type="button" className="srt-add-btn"
-          onClick={() => converted && onApply(converted)}
-          disabled={!converted}
+          onClick={handleApply}
+          disabled={!rawLyrics.trim()}
         >
           Apply
         </button>
@@ -310,12 +304,30 @@ function downloadSrt(rawSrt: string) {
   URL.revokeObjectURL(url)
 }
 
+async function loadAudioBlob(
+  audioSrc: string | null,
+  fileKey: string | undefined,
+  signal: AbortSignal,
+): Promise<Blob> {
+  if (audioSrc) {
+    const audioRes = await fetch(audioSrc, { signal })
+    if (audioRes.ok) return audioRes.blob()
+  }
+  if (fileKey) {
+    const blob = await idbGet(fileKey)
+    if (blob) return blob
+  }
+  throw new Error('Could not read audio file.')
+}
+
 function AiTab({
   audioSrc,
+  audioFileKey,
   rawLyrics,
   onApply,
 }: {
   audioSrc: string | null
+  audioFileKey?: string
   rawLyrics: string
   onApply: (cues: SrtCue[]) => void
 }) {
@@ -326,8 +338,10 @@ function AiTab({
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  const canTranscribe = Boolean(audioSrc || audioFileKey)
+
   const handleTranscribe = async () => {
-    if (!audioSrc) return
+    if (!canTranscribe) return
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -337,9 +351,7 @@ function AiTab({
 
     try {
       setStatus('uploading')
-      const audioRes = await fetch(audioSrc, { signal: ctrl.signal })
-      if (!audioRes.ok) throw new Error('Could not read audio file.')
-      const audioBlob = await audioRes.blob()
+      const audioBlob = await loadAudioBlob(audioSrc, audioFileKey, ctrl.signal)
 
       const form = new FormData()
       form.append('audio', audioBlob, 'audio.mp3')
@@ -409,7 +421,7 @@ function AiTab({
         </label>
       )}
 
-      {!audioSrc && (
+      {!canTranscribe && (
         <p className="srt-ai-no-audio">Load an audio track in the editor before transcribing.</p>
       )}
 
@@ -419,7 +431,7 @@ function AiTab({
           type="button"
           className="srt-ai-run-btn"
           onClick={handleTranscribe}
-          disabled={!audioSrc || isBusy}
+          disabled={!canTranscribe || isBusy}
         >
           {isBusy ? <Loader size={14} className="srt-spinner" /> : <Bot size={14} />}
           {isBusy ? AI_STATUS_LABEL[status] : 'Transcribe Audio'}
@@ -574,7 +586,7 @@ const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
 
 export function SubtitleModal({
   onClose, onSave, editingLayer, onUpdateLayer,
-  waveformPeaks, audioSrc, audioDuration,
+  waveformPeaks, audioSrc, audioFileKey, audioDuration,
 }: Props) {
   const initialCues = (editingLayer.settings.cues ?? []) as SrtCue[]
   const defaultTab: TabId = 'lyrics'
@@ -663,7 +675,6 @@ export function SubtitleModal({
               rawLyrics={rawLyrics}
               onRawLyricsChange={setRawLyrics}
               audioDuration={audioDuration}
-              onCuesChange={handleCuesChange}
               onApply={(next) => withFlash(() => handleApply(next, 'lyrics'))}
             />
           )}
@@ -678,6 +689,7 @@ export function SubtitleModal({
           {activeTab === 'ai' && (
             <AiTab
               audioSrc={audioSrc}
+              audioFileKey={audioFileKey}
               rawLyrics={rawLyrics}
               onApply={(next) => withFlash(() => handleApply(next, 'srt'))}
             />

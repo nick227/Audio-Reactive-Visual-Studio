@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { assetRegistry } from '../../assets/registry'
+import { createEntityId, nowIso } from '../../entities/entityTypes'
 import type { SrtCue } from '../../subtitles/parseSrt'
 import type { LayerInstance, Project } from '../../project/types'
 import { applyLayerPatch } from '../core/layerPatch'
@@ -66,6 +67,49 @@ export function useLayerActions({
     if (selectedLayerId === layerId) setSelectedLayerId('')
   }, [commitProject, selectedLayerId, setSelectedLayerId])
 
+  const duplicateLayer = useCallback((layerId: string) => {
+    let duplicatedLayerId = ''
+
+    commitProject((current) => {
+      const index = current.layers.findIndex((layer) => layer.id === layerId)
+      const source = current.layers[index]
+      if (!source) return current
+
+      const timestamp = nowIso()
+      const duplicate: LayerInstance = {
+        ...source,
+        id: createEntityId('layer'),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        name: `${source.name} Copy`,
+        placement: { ...source.placement },
+        reaction: { ...source.reaction },
+        settings: structuredClone(source.settings),
+        timing: source.timing
+          ? {
+              ...source.timing,
+              gaps: source.timing.gaps.map((gap) => ({
+                ...gap,
+                id: createEntityId('gap'),
+              })),
+            }
+          : undefined,
+      }
+
+      duplicatedLayerId = duplicate.id
+      return {
+        ...current,
+        layers: [
+          ...current.layers.slice(0, index + 1),
+          duplicate,
+          ...current.layers.slice(index + 1),
+        ],
+      }
+    })
+
+    if (duplicatedLayerId) setSelectedLayerId(duplicatedLayerId)
+  }, [commitProject, setSelectedLayerId])
+
   const reorderLayers = useCallback((layers: LayerInstance[]) => {
     commitProject((current) => ({ ...current, layers }))
   }, [commitProject])
@@ -79,6 +123,7 @@ export function useLayerActions({
     editSubtitleLayer: openSubtitleEditor,
     updateSubtitleLayerCues,
     removeLayer,
+    duplicateLayer,
     reorderLayers,
   }
 }

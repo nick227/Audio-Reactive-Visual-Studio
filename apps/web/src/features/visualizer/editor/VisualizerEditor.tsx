@@ -65,7 +65,17 @@ export function VisualizerEditor() {
     [project.layers],
   )
   const rendererMode = rendererDiagnostics.mode
-  const hasAudio = Boolean(project.audio?.url)
+  const hasAudio = Boolean(
+    project.audio?.url ||
+    project.audio?.fileKey ||
+    activeAudioObjectUrlRef.current ||
+    playback.audioRef.current?.src,
+  )
+  const audioSrc =
+    project.audio?.url ||
+    activeAudioObjectUrlRef.current ||
+    playback.audioRef.current?.src ||
+    null
   const editorExport = useEditorExport({
     project,
     commitProject,
@@ -309,6 +319,7 @@ export function VisualizerEditor() {
       <EditorModals
         modal={modal}
         project={project}
+        audioSrc={audioSrc}
         mediaLibrary={mediaLibrary}
         layerActions={layerActions}
         waveformPeaks={playback.peaks}

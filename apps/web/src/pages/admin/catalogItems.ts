@@ -30,6 +30,7 @@ export type SeedFxItem = {
   id: string
   name: string
   category: string
+  settings: Record<string, unknown>
   itemKey: string
 }
 
@@ -81,6 +82,7 @@ export function buildCatalog(tab: MediaTab, cloudAssets: CommunityAsset[]): Cata
       id: a.id,
       name: a.name,
       category: a.category,
+      settings: a.defaultLayer.settings ?? {},
       itemKey: seedFxItemKey(a.id),
     }))
   return seedFx

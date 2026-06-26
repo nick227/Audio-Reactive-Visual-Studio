@@ -73,7 +73,8 @@ Open:
 Set these in `.env`:
 
 ```bash
-ADMIN_EMAIL=admin@example.com
+ADMIN_EMAIL=admin@email.com
+ADMIN_PASSWORD=change-this-admin-password
 ADMIN_DISPLAY_NAME=Admin
 ```
 
@@ -83,7 +84,9 @@ Then run:
 pnpm db:seed
 ```
 
-The seed creates or updates that user as an `ADMIN`. If the admin signs in with Google using the same email address, the app links that Google account to the seeded user.
+The seed creates or updates that user as an `ADMIN` and stores a bcrypt password hash from `ADMIN_PASSWORD`. Use that email and password on the normal login screen.
+
+Google sign-in is optional for the same account. If the admin later signs in with Google using the same Gmail address, for example `admin@gmail.com`, the app links that Google account to the seeded admin user.
 
 Admins can open `/admin` after signing in. Current admin features include user listing, role changes, suspend/unsuspend, delete guards, and basic community asset management. R2 upload buttons are still Phase 2 stubs.
 
@@ -136,6 +139,9 @@ CORS_ORIGIN=https://your-web-app.example.com
 APP_URL=https://your-web-app.example.com
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 OPENAI_API_KEY=sk-...
+ADMIN_EMAIL=admin@gmail.com
+ADMIN_PASSWORD=use-a-long-random-admin-password
+ADMIN_DISPLAY_NAME=Admin
 ```
 
 Before the first production start, run the schema push:
@@ -147,7 +153,7 @@ pnpm db:push
 Then seed the first admin:
 
 ```bash
-ADMIN_EMAIL=you@example.com ADMIN_DISPLAY_NAME="Your Name" pnpm db:seed
+pnpm db:seed
 ```
 
 ### Web Service

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff, Settings2, Trash2 } from 'lucide-react'
+import { Copy, Eye, EyeOff, Settings2, Trash2 } from 'lucide-react'
 import { assetRegistry } from '../assets/registry'
 import type { AssetControl, AudioTrigger, FitMode, LayerInstance } from '../project/types'
 import { LayerVisibilityStrip } from './LayerVisibilityStrip'
@@ -16,6 +16,7 @@ type Props = {
   onUpdateTransient: (layerId: string, patch: Partial<LayerInstance>) => void
   onTimingDragStart: () => void
   onRemove: (layerId: string) => void
+  onDuplicate: (layerId: string) => void
   onReorder: (layers: LayerInstance[]) => void
   onEditSubtitleLayer?: (layerId: string) => void
   onEditVideoLayer?: (layerId: string) => void
@@ -23,7 +24,7 @@ type Props = {
 
 export function AssetList({
   layers, selectedLayerId, durationMs, currentTimeMs, onSelect, onUpdate, onUpdateTransient,
-  onTimingDragStart, onRemove, onReorder, onEditSubtitleLayer, onEditVideoLayer,
+  onTimingDragStart, onRemove, onDuplicate, onReorder, onEditSubtitleLayer, onEditVideoLayer,
 }: Props) {
   const [settingsLayerId, setSettingsLayerId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -161,6 +162,7 @@ export function AssetList({
                   isVideo={isVideo}
                   templateControls={template?.controls}
                   onUpdate={(patch) => onUpdate(layer.id, patch)}
+                  onDuplicate={() => { onDuplicate(layer.id); setSettingsLayerId(null) }}
                   onRemove={() => { onRemove(layer.id); setSettingsLayerId(null) }}
                   onEditSubtitle={() => { onEditSubtitleLayer?.(layer.id); setSettingsLayerId(null) }}
                   onEditVideo={() => { onEditVideoLayer?.(layer.id); setSettingsLayerId(null) }}
@@ -180,13 +182,14 @@ type LayerSettingsPopupProps = {
   isVideo: boolean
   templateControls?: AssetControl[]
   onUpdate: (patch: Partial<LayerInstance>) => void
+  onDuplicate: () => void
   onRemove: () => void
   onEditSubtitle: () => void
   onEditVideo: () => void
 }
 
 function LayerSettingsPopup({
-  layer, isSubtitle, isVideo, templateControls, onUpdate, onRemove, onEditSubtitle, onEditVideo,
+  layer, isSubtitle, isVideo, templateControls, onUpdate, onDuplicate, onRemove, onEditSubtitle, onEditVideo,
 }: LayerSettingsPopupProps) {
   const sp = (e: React.MouseEvent) => e.stopPropagation()
 
@@ -266,6 +269,9 @@ function LayerSettingsPopup({
           onClick={() => onUpdate({ visible: !layer.visible })}
         >
           {layer.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+        </button>
+        <button type="button" className="lr-settings-icon-btn" title="Duplicate layer" onClick={onDuplicate}>
+          <Copy size={14} />
         </button>
         <button type="button" className="lr-settings-icon-btn danger" title="Delete layer" onClick={onRemove}>
           <Trash2 size={14} />

@@ -13,6 +13,27 @@ export const stagePresets: Array<{
   { id: 'film', label: 'Film', icon: Clapperboard, width: 2048, height: 858 },
 ]
 
-export function getActiveStagePresetId(width: number, height: number): StagePresetId {
-  return stagePresets.find((preset) => preset.width === width && preset.height === height)?.id ?? 'desktop'
+type ActiveStagePresetOptions = {
+  isMobileDevice?: boolean
+}
+
+function isMobileDevice() {
+  if (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent)) {
+    return true
+  }
+
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 767px), (pointer: coarse) and (max-width: 1024px)').matches
+}
+
+export function getActiveStagePresetId(
+  width: number,
+  height: number,
+  options: ActiveStagePresetOptions = {},
+): StagePresetId {
+  const matchingPreset = stagePresets.find((preset) => preset.width === width && preset.height === height)
+  if (matchingPreset) return matchingPreset.id
+
+  return (options.isMobileDevice ?? isMobileDevice()) ? 'mobile' : 'desktop'
 }

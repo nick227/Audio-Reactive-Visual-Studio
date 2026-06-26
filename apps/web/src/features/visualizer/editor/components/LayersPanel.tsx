@@ -8,6 +8,7 @@ type LayerActions = {
   updateLayerTransient: (layerId: string, patch: Partial<LayerInstance>) => void
   snapshotForDrag: () => void
   removeLayer: (layerId: string) => void
+  duplicateLayer: (layerId: string) => void
   reorderLayers: (layers: LayerInstance[]) => void
   editSubtitleLayer: (layerId: string) => void
   openSubtitleEditor: (layerId?: string) => void
@@ -69,6 +70,7 @@ export function LayersPanel({
         onUpdateTransient={layerActions.updateLayerTransient}
         onTimingDragStart={layerActions.snapshotForDrag}
         onRemove={layerActions.removeLayer}
+        onDuplicate={layerActions.duplicateLayer}
         onReorder={layerActions.reorderLayers}
         onEditSubtitleLayer={layerActions.editSubtitleLayer}
         onEditVideoLayer={onEditVideoLayer}

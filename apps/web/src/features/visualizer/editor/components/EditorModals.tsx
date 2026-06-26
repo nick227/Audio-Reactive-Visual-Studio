@@ -54,6 +54,7 @@ type ExportState = {
 type EditorModalsProps = {
   modal: EditorModal
   project: Project
+  audioSrc: string | null
   mediaLibrary: MediaLibrary
   layerActions: LayerActions
   waveformPeaks: number[]
@@ -64,6 +65,7 @@ type EditorModalsProps = {
 export function EditorModals({
   modal,
   project,
+  audioSrc,
   mediaLibrary,
   layerActions,
   waveformPeaks,
@@ -95,7 +97,8 @@ export function EditorModals({
         editingLayer={editingLayer}
         onUpdateLayer={(patch) => layerActions.updateLayer(modal.layerId, patch)}
         waveformPeaks={waveformPeaks}
-        audioSrc={project.audio?.url ?? null}
+        audioSrc={audioSrc}
+        audioFileKey={project.audio?.fileKey}
         audioDuration={project.audio?.duration ?? 0}
       />
     )

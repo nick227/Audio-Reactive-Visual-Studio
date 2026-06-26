@@ -41,7 +41,8 @@ export function useMediaLibrary({
   const restoredForIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (restoredForIdRef.current === project.id) return
+    const audioNeedsRestore = Boolean(project.audio?.fileKey && !project.audio.url)
+    if (restoredForIdRef.current === project.id && !audioNeedsRestore) return
     restoredForIdRef.current = project.id
     setSessionUploads([])
     setSessionVideos([])
@@ -77,6 +78,7 @@ export function useMediaLibrary({
       if (project.audio?.fileKey) {
         try {
           const blob = await idbGet(project.audio.fileKey)
+          if (cancelled) return
           if (blob && audioRef.current) {
             const url = registerObjectUrl(URL.createObjectURL(blob))
             activeAudioObjectUrlRef.current = url
@@ -109,7 +111,17 @@ export function useMediaLibrary({
     return () => {
       cancelled = true
     }
-  }, [activeAudioObjectUrlRef, audioRef, patchPresent, project, project.id, registerObjectUrl, setPeaks])
+  }, [
+    activeAudioObjectUrlRef,
+    audioRef,
+    patchPresent,
+    project.audio?.fileKey,
+    project.audio?.url,
+    project.id,
+    project.layers,
+    registerObjectUrl,
+    setPeaks,
+  ])
 
   const addUploadedImage = useCallback(async (file: File) => {
     const template = assetRegistry.get('photo-cutout')
