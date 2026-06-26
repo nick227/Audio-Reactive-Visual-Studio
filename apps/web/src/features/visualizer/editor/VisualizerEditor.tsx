@@ -10,8 +10,7 @@ import type { AudioFeatures } from '../audio/audioTypes'
 import { silentAudioFeatures } from '../audio/audioTypes'
 import { createDefaultProject } from '../project/defaultProject'
 import { clearSavedProject } from '../project/projectPersistence'
-import type { LayerInstance, Project, StagePresetId } from '../project/types'
-import { assetRegistry } from '../assets/registry'
+import type { Project, StagePresetId } from '../project/types'
 import { createEntityId, nowIso } from '../entities/entityTypes'
 import { isTypographyLayer } from '../runtime/layerVisualKind'
 import { Stage, type StageHandle } from './Stage'
@@ -56,6 +55,7 @@ import { useEditorHistory } from './hooks/useEditorHistory'
 import { useEditorPersistence } from './hooks/useEditorPersistence'
 import { useManagedObjectUrls } from './hooks/useManagedObjectUrls'
 import { useMediaLibrary } from './hooks/useMediaLibrary'
+import { useLayerActions } from './hooks/useLayerActions'
 
 const UI_FRAME_INTERVAL_MS = 100
 
@@ -203,6 +203,14 @@ export function VisualizerEditor() {
     setSelectedLayerId,
     setPeaks,
     closeModal,
+  })
+  const layerActions = useLayerActions({
+    selectedLayerId,
+    setSelectedLayerId,
+    patchPresent,
+    commitProject,
+    closeModal,
+    openSubtitleModal: showSubtitleModal,
   })
 
   const updatePrerenderStats = useCallback((totalChunks: number, identities?: Iterable<RenderChunkIdentity>) => {
@@ -452,66 +460,6 @@ export function VisualizerEditor() {
     }, 60_000)
     return () => clearInterval(iv)
   }, [me])
-
-  // ── Layer operations ─────────────────────────────────────────────────────────
-
-  // Committed update — for inspector/assetlist controls. Pushes to undo history.
-  const updateLayer = useCallback((layerId: string, patch: Partial<LayerInstance>) => {
-    commitProject((current) => ({ ...current, layers: applyLayerPatch(current.layers, layerId, patch) }))
-  }, [commitProject])
-
-  // Transient update — for stage drag. Only updates present, no history push.
-  const updateLayerTransient = useCallback((layerId: string, patch: Partial<LayerInstance>) => {
-    patchPresent((current) => ({ ...current, layers: applyLayerPatch(current.layers, layerId, patch) }))
-  }, [patchPresent])
-
-  // Snapshots present into past before a drag starts, so the full drag is one undo step.
-  const snapshotForDrag = useCallback(() => {
-    commitProject((current) => current)
-  }, [commitProject])
-
-  const addTemplate = useCallback((templateId: string) => {
-    const template = assetRegistry.get(templateId)
-    if (!template) return
-    const layer = template.createLayer()
-    commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
-    setSelectedLayerId(layer.id)
-    closeModal()
-  }, [closeModal, commitProject])
-
-  const openSubtitleEditor = useCallback((layerId?: string) => {
-    if (layerId) {
-      setSelectedLayerId(layerId)
-      showSubtitleModal(layerId)
-    } else {
-      const template = assetRegistry.get('subtitle-layer')
-      if (!template) return
-      const layer = template.createLayer()
-      commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
-      setSelectedLayerId(layer.id)
-      showSubtitleModal(layer.id)
-    }
-  }, [commitProject, showSubtitleModal])
-
-  const editSubtitleLayer = useCallback((layerId: string) => {
-    openSubtitleEditor(layerId)
-  }, [openSubtitleEditor])
-
-  const updateSubtitleLayerCues = useCallback((layerId: string, cues: import('../subtitles/parseSrt').SrtCue[]) => {
-    commitProject((current) => ({ ...current, layers: applyLayerPatch(current.layers, layerId, { settings: { cues } }) }))
-  }, [commitProject])
-
-
-  // Does NOT revoke blob URLs or delete IDB entries — undo may restore the layer.
-  // Cleanup happens on resetProject or session end.
-  const removeLayer = useCallback((layerId: string) => {
-    commitProject((current) => ({ ...current, layers: current.layers.filter((l) => l.id !== layerId) }))
-    if (selectedLayerId === layerId) setSelectedLayerId('')
-  }, [commitProject, selectedLayerId])
-
-  const reorderLayers = useCallback((layers: LayerInstance[]) => {
-    commitProject((current) => ({ ...current, layers }))
-  }, [commitProject])
 
   // ── Project-level operations ─────────────────────────────────────────────────
 
@@ -1001,8 +949,8 @@ export function VisualizerEditor() {
                 setSelectedLayerId(id)
                 if (id !== textEditLayerIdRef.current) setTextEditLayerId(null)
               }}
-              onUpdateLayer={updateLayerTransient}
-              onDragStart={snapshotForDrag}
+              onUpdateLayer={layerActions.updateLayerTransient}
+              onDragStart={layerActions.snapshotForDrag}
               onDoubleClickLayer={handleLayerDoubleClick}
               editingLayerId={textEditLayerId}
               onTextChange={handleTextChange}
@@ -1039,7 +987,7 @@ export function VisualizerEditor() {
                 onStart={openExportModal}
                 onCancel={() => { exportCancelRef.current = true; exportAbortRef.current?.abort() }}
               />
-              <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => openSubtitleEditor()}>
+              <button className="layers-add-btn layers-add-subtitle-btn" onClick={() => layerActions.openSubtitleEditor()}>
                 <Captions size={13} /> Add Subtitles
               </button>
               <button className="layers-add-btn" onClick={openMediaModal}>
@@ -1052,12 +1000,12 @@ export function VisualizerEditor() {
               durationMs={(project.audio?.duration ?? 0) * 1000}
               currentTimeMs={currentTimeMs}
               onSelect={setSelectedLayerId}
-              onUpdate={updateLayer}
-              onUpdateTransient={updateLayerTransient}
-              onTimingDragStart={snapshotForDrag}
-              onRemove={removeLayer}
-              onReorder={reorderLayers}
-              onEditSubtitleLayer={editSubtitleLayer}
+              onUpdate={layerActions.updateLayer}
+              onUpdateTransient={layerActions.updateLayerTransient}
+              onTimingDragStart={layerActions.snapshotForDrag}
+              onRemove={layerActions.removeLayer}
+              onReorder={layerActions.reorderLayers}
+              onEditSubtitleLayer={layerActions.editSubtitleLayer}
               onEditVideoLayer={openVideoSettingsModal}
             />
           </>
@@ -1068,7 +1016,7 @@ export function VisualizerEditor() {
       {modal?.type === 'media' && (
           <MediaModal
             onClose={closeModal}
-            onAddTemplate={addTemplate}
+            onAddTemplate={layerActions.addTemplate}
             onUploadImage={(file) => void mediaLibrary.addUploadedImage(file)}
             onUploadVideo={(file) => void mediaLibrary.addUploadedVideo(file)}
             uploadedImages={mediaLibrary.sessionUploads}
@@ -1084,9 +1032,9 @@ export function VisualizerEditor() {
         return (
           <SubtitleModal
             onClose={closeModal}
-            onSave={(cues) => updateSubtitleLayerCues(modal.layerId, cues)}
+            onSave={(cues) => layerActions.updateSubtitleLayerCues(modal.layerId, cues)}
             editingLayer={editingLayer}
-            onUpdateLayer={(patch) => updateLayer(modal.layerId, patch)}
+            onUpdateLayer={(patch) => layerActions.updateLayer(modal.layerId, patch)}
             waveformPeaks={peaks}
             audioSrc={project.audio?.url ?? null}
             audioDuration={project.audio?.duration ?? 0}
@@ -1101,7 +1049,7 @@ export function VisualizerEditor() {
           <VideoSettingsModal
             layer={vLayer}
             onClose={closeModal}
-            onUpdate={(patch) => updateLayer(modal.layerId, patch)}
+            onUpdate={(patch) => layerActions.updateLayer(modal.layerId, patch)}
           />
         )
       })()}
