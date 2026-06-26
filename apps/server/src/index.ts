@@ -27,6 +27,7 @@ async function main() {
   await server.register(cors, {
     origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   })
 
   await server.register(cookie)
@@ -69,14 +70,23 @@ async function main() {
 
   server.get('/health', async () => ({ status: 'ok' }))
 
-  // Local dev upload target when R2 is not configured.
+  // Proxied community upload — browser PUTs here; server writes to R2 or local disk.
   server.put('/internal/community-upload/*', async (request, reply) => {
+    try {
+      await security.adminAuth(request, reply, {})
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; message?: string }
+      return reply.status(e.statusCode ?? 401).send({ error: e.message ?? 'Unauthorized' })
+    }
+
     const fileKey = decodeURIComponent((request.params as { '*': string })['*'])
     const buffer = await request.body as Buffer
     if (!buffer?.length) {
       return reply.status(400).send({ error: 'Empty upload body' })
     }
-    await mediaStorage.saveLocal(fileKey, buffer)
+
+    const mimeType = String(request.headers['content-type'] ?? 'application/octet-stream')
+    await mediaStorage.putObject(fileKey, buffer, mimeType)
     return reply.status(204).send()
   })
 

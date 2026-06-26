@@ -92,7 +92,7 @@ export async function requestCommunityUploadUrl(request: any, reply: any) {
     title?: string
   }
   const fileKey = mediaStorage.buildFileKey(request.user.id, body.filename)
-  const uploadUrl = await mediaStorage.createUploadUrl(fileKey, body.mimeType, body.sizeBytes)
+  const uploadUrl = mediaStorage.createUploadUrl(fileKey)
   return reply.send({ data: { fileKey, uploadUrl } })
 }
 

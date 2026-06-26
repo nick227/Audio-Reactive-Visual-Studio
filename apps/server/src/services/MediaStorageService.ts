@@ -2,7 +2,6 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync, u
 import { dirname, join } from 'path'
 import { randomBytes } from 'crypto'
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const UPLOAD_ROOT = join(process.cwd(), 'uploads', 'community')
 
@@ -44,20 +43,23 @@ export class MediaStorageService {
     return `${base.replace(/\/$/, '')}/media/community/${encodeURIComponent(fileKey)}`
   }
 
-  async createUploadUrl(fileKey: string, mimeType: string, sizeBytes: number) {
-    if (r2Configured()) {
-      const command = new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME!,
-        Key: fileKey,
-        ContentType: mimeType,
-        ContentLength: sizeBytes,
-      })
-      const uploadUrl = await getSignedUrl(s3Client(), command, { expiresIn: 3600 })
-      return uploadUrl
-    }
-
+  /** Browser uploads go through the API (avoids R2 bucket CORS). */
+  createUploadUrl(fileKey: string) {
     const base = process.env.APP_URL ?? `http://localhost:${process.env.PORT ?? 3001}`
     return `${base.replace(/\/$/, '')}/internal/community-upload/${encodeURIComponent(fileKey)}`
+  }
+
+  async putObject(fileKey: string, body: Buffer, mimeType: string) {
+    if (r2Configured()) {
+      await s3Client().send(new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME!,
+        Key: fileKey,
+        Body: body,
+        ContentType: mimeType,
+      }))
+      return
+    }
+    await this.saveLocal(fileKey, body)
   }
 
   async saveLocal(fileKey: string, buffer: Buffer) {
