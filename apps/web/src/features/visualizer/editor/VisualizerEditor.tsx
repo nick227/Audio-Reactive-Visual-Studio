@@ -1,15 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createDefaultProject } from '../project/defaultProject'
-import { clearSavedProject } from '../project/projectPersistence'
-import type { Project, StagePresetId } from '../project/types'
 import { nowIso } from '../entities/entityTypes'
+import type { Project, StagePresetId } from '../project/types'
 import { isTypographyLayer } from '../runtime/layerVisualKind'
 import type { StageHandle } from './Stage'
 import { AUDIO_ENCODER_SUPPORTED } from '../export/webcodecs'
 import { DEFAULT_PRESET_ID, type PresetId } from '../export/presets'
 import { analyzeRendererSupport } from '../export/renderCanvasFrame'
-import { idbDelete } from '../storage/idbStorage'
-import { SiteTopBar } from '../../../components/SiteTopBar'
 import { FrameChunkCache } from '../prerender'
 import { applyLayerPatch } from './core/layerPatch'
 import { getActiveStagePresetId, stagePresets } from './core/stagePresets'
@@ -26,14 +22,17 @@ import { EditorStageArea } from './components/EditorStageArea'
 import { EditorModals } from './components/EditorModals'
 import { usePrerenderCache } from './hooks/usePrerenderCache'
 import { useEditorExport } from './hooks/useEditorExport'
-import { useCloudProjectSync } from './hooks/useCloudProjectSync'
+import { useProjectLibrary } from './hooks/useProjectLibrary'
+import { useProjectTitleSync } from './hooks/useProjectTitleSync'
+import { SiteTopBar } from '../../../components/SiteTopBar'
 
 export function VisualizerEditor() {
   const { present: project, patchPresent, commitProject, undo, redo, resetHistory } = useEditorHistory()
-  const cloudSync = useCloudProjectSync(project)
-  const { localSavedAt } = useEditorPersistence({ project, cloudDirtyRef: cloudSync.cloudDirtyRef })
+  const { localSavedAt } = useEditorPersistence({ project })
+  useProjectTitleSync(project)
 
   const [selectedLayerId, setSelectedLayerId] = useState(() => project.layers[project.layers.length - 1]?.id ?? '')
+  const [textEditLayerId, setTextEditLayerId] = useState<string | null>(null)
   const { modal, closeModal, openMediaModal, openSubtitleModal: showSubtitleModal, openVideoSettingsModal, openExportModal } = useEditorModal()
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [fsUiIdle, setFsUiIdle] = useState(false)
@@ -108,6 +107,31 @@ export function VisualizerEditor() {
     openSubtitleModal: showSubtitleModal,
   })
 
+  const handleProjectSwitchCleanup = useCallback(() => {
+    playback.stopPlayback()
+    revokeAllObjectUrls()
+    if (playback.audioRef.current) playback.audioRef.current.src = ''
+    playback.resetPlaybackUi()
+    setTextEditLayerId(null)
+    closeModal()
+    prerenderCacheRef.current.clear()
+  }, [closeModal, playback, revokeAllObjectUrls])
+
+  const handleProjectSwitchReady = useCallback((next: Project) => {
+    setSelectedLayerId(next.layers[next.layers.length - 1]?.id ?? '')
+  }, [])
+
+  const projectLibrary = useProjectLibrary({
+    project,
+    resetHistory,
+    onBeforeSwitch: handleProjectSwitchCleanup,
+    onAfterSwitch: handleProjectSwitchReady,
+  })
+
+  const renameProject = useCallback((name: string) => {
+    commitProject((current) => ({ ...current, name, updatedAt: nowIso() }))
+  }, [commitProject])
+
   const activeStagePreset = useMemo(
     () => getActiveStagePresetId(project.stage.width, project.stage.height),
     [project.stage.height, project.stage.width],
@@ -137,7 +161,6 @@ export function VisualizerEditor() {
 
   // ── Text editing ─────────────────────────────────────────────────────────────
 
-  const [textEditLayerId, setTextEditLayerId] = useState<string | null>(null)
   const textEditLayerIdRef = useRef<string | null>(null)
   textEditLayerIdRef.current = textEditLayerId
 
@@ -195,26 +218,6 @@ export function VisualizerEditor() {
     return () => window.removeEventListener('keydown', handler)
   }, [isFullScreen])
 
-  // ── Project-level operations ─────────────────────────────────────────────────
-
-  const resetProject = useCallback(() => {
-    if (!window.confirm('Start a new project? All layers and unsaved changes will be cleared.')) return
-    playback.stopPlayback()
-    // Cleanup IDB entries for uploaded files in the current project
-    for (const layer of project.layers) {
-      if (typeof layer.settings.srcKey === 'string') void idbDelete(String(layer.settings.srcKey))
-    }
-    if (project.audio?.fileKey) void idbDelete(project.audio.fileKey)
-    clearSavedProject()
-    revokeAllObjectUrls()
-    if (playback.audioRef.current) playback.audioRef.current.src = ''
-    const fresh = createDefaultProject()
-    resetHistory(fresh)
-    setSelectedLayerId(fresh.layers[fresh.layers.length - 1]?.id ?? '')
-    playback.resetPlaybackUi()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.audio?.fileKey, project.layers])
-
   togglePlaybackRef.current = () => { void playback.togglePlayback() }
 
   // ── Stage preset ─────────────────────────────────────────────────────────────
@@ -239,10 +242,13 @@ export function VisualizerEditor() {
 
       {!isFullScreen && (
         <SiteTopBar
-          onSaveToCloud={cloudSync.me ? cloudSync.handleSaveToCloud : undefined}
-          isSaving={cloudSync.isSaving}
-          lastCloudSaved={cloudSync.lastSaved}
           localSavedAt={localSavedAt}
+          projectName={project.name}
+          projects={projectLibrary.projects}
+          activeProjectId={projectLibrary.activeProjectId}
+          onRenameProject={renameProject}
+          onSwitchProject={projectLibrary.switchToProject}
+          onCreateProject={projectLibrary.createProject}
         />
       )}
 

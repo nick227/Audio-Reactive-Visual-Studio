@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { Project } from '../../project/types'
-import { createDefaultProject } from '../../project/defaultProject'
-import { loadSavedProject } from '../../project/projectPersistence'
+import { loadActiveProject } from '../../project/projectLibrary'
 import {
   commitHistory,
   patchHistoryPresent,
@@ -12,7 +11,7 @@ import {
 } from '../core/history'
 
 export function useEditorHistory() {
-  const [history, setHistory] = useState<HistoryState>(() => createHistoryState(loadSavedProject() ?? createDefaultProject()))
+  const [history, setHistory] = useState<HistoryState>(() => createHistoryState(loadActiveProject()))
 
   const patchPresent = useCallback((recipe: (current: Project) => Project) => {
     setHistory((current) => patchHistoryPresent(current, recipe))

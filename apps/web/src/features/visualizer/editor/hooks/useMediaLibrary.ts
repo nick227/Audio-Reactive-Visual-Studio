@@ -38,11 +38,13 @@ export function useMediaLibrary({
 }: UseMediaLibraryParams) {
   const [sessionUploads, setSessionUploads] = useState<MediaLibraryItem[]>([])
   const [sessionVideos, setSessionVideos] = useState<MediaLibraryItem[]>([])
-  const restoredRef = useRef(false)
+  const restoredForIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (restoredRef.current) return
-    restoredRef.current = true
+    if (restoredForIdRef.current === project.id) return
+    restoredForIdRef.current = project.id
+    setSessionUploads([])
+    setSessionVideos([])
 
     async function restoreBlobs() {
       let anyChanged = false
@@ -96,7 +98,7 @@ export function useMediaLibrary({
     }
 
     void restoreBlobs()
-  }, [activeAudioObjectUrlRef, audioRef, patchPresent, project, registerObjectUrl, setPeaks])
+  }, [activeAudioObjectUrlRef, audioRef, patchPresent, project, project.id, registerObjectUrl, setPeaks])
 
   const addUploadedImage = useCallback(async (file: File) => {
     const template = assetRegistry.get('photo-cutout')

@@ -1,30 +1,33 @@
 import { useNavigate } from 'react-router-dom'
 import { useCurrentUser } from '@avl/sdk'
 import { SITE_NAME } from '../brand/site'
+import { ProjectSwitcher } from './ProjectSwitcher'
+import type { ProjectIndexEntry } from '../features/visualizer/project/projectLibrary'
 
 interface Props {
-  onSaveToCloud?: () => void
-  isSaving?: boolean
-  lastCloudSaved?: string | null
   localSavedAt?: string | null
+  projectName: string
+  projects: ProjectIndexEntry[]
+  activeProjectId: string
+  onRenameProject: (name: string) => void
+  onSwitchProject: (id: string) => void
+  onCreateProject: () => void
 }
 
-function cloudBtnLabel(isSaving: boolean, lastCloudSaved: string | null | undefined): string {
-  if (isSaving) return 'Saving…'
-  if (lastCloudSaved) {
-    const secAgo = (Date.now() - new Date(lastCloudSaved).getTime()) / 1000
-    if (secAgo < 60) return 'Synced ✓'
-  }
-  return 'Save to Cloud'
-}
-
-export function SiteTopBar({ onSaveToCloud, isSaving = false, lastCloudSaved, localSavedAt }: Props) {
+export function SiteTopBar({
+  localSavedAt,
+  projectName,
+  projects,
+  activeProjectId,
+  onRenameProject,
+  onSwitchProject,
+  onCreateProject,
+}: Props) {
   const navigate = useNavigate()
   const { data: me, isLoading } = useCurrentUser()
   const user = me?.data
 
   const showLocal = Boolean(localSavedAt)
-  const cloudLabel = cloudBtnLabel(isSaving, lastCloudSaved)
 
   return (
     <header className="site-topbar">
@@ -32,6 +35,15 @@ export function SiteTopBar({ onSaveToCloud, isSaving = false, lastCloudSaved, lo
         <a className="site-brand" href="/" aria-label={`${SITE_NAME} home`}>
           <span className="site-name">{SITE_NAME}</span>
         </a>
+
+        <ProjectSwitcher
+          projectName={projectName}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onRename={onRenameProject}
+          onSwitch={onSwitchProject}
+          onCreate={onCreateProject}
+        />
 
         <div style={styles.right}>
           {showLocal && (
@@ -49,19 +61,6 @@ export function SiteTopBar({ onSaveToCloud, isSaving = false, lastCloudSaved, lo
               <button className="topbar-btn topbar-btn--primary" onClick={() => navigate('/login')}>
                 Get started
               </button>
-            </>
-          )}
-
-          {user && onSaveToCloud && (
-            <>
-            • <a
-              className="topbar-link"
-              style={styles.savedLocal}
-              onClick={onSaveToCloud}
-              title="Save project structure to cloud (files stay local until Phase 2)"
-            >
-            {cloudLabel}
-            </a>
             </>
           )}
 
