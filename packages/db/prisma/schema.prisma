@@ -107,7 +107,7 @@ model CommunityAsset {
   mimeType   String
   sizeBytes  Int
   title      String?
-  published  Boolean  @default(false)
+  published  Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   uploader   User     @relation(fields: [uploadedBy], references: [id])

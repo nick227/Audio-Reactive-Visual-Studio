@@ -19,7 +19,9 @@ const btn: React.CSSProperties = {
   flexShrink: 0,
 }
 
-export function CloudUploadButton() {
+type Props = { accept?: string }
+
+export function CloudUploadButton({ accept = 'image/*,video/*,audio/*' }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const upload = useUploadCommunityAsset()
 
@@ -28,7 +30,7 @@ export function CloudUploadButton() {
     if (!file) return
     try {
       await upload.mutateAsync(file)
-      toast.success('Uploaded to cloud library')
+      toast.success('Uploaded')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Upload failed')
     }
@@ -39,7 +41,7 @@ export function CloudUploadButton() {
       <input
         ref={fileRef}
         type="file"
-        accept="image/*,video/*,audio/*"
+        accept={accept}
         hidden
         onChange={(e) => {
           void handleFiles(e.target.files)

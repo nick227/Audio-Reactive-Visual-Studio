@@ -1,9 +1,11 @@
 import { Check, File, Image, Music, Pencil, Trash2, Video, X } from 'lucide-react'
+import { getCommunityMediaUrl } from '../../lib/mediaUrls'
 import { formatBytes, formatDate, mimeCategory, type MimeCategory } from './assetUtils'
 import type { CommunityAsset } from './types'
 
 export type AssetCardProps = {
   asset: CommunityAsset
+  locationLabel?: string
   editing: boolean
   editTitle: string
   confirmDelete: boolean
@@ -156,22 +158,23 @@ const card: Record<string, React.CSSProperties> = {
 }
 
 export function AssetCard({
-  asset, editing, editTitle, confirmDelete, pending,
+  asset, locationLabel, editing, editTitle, confirmDelete, pending,
   onStartEdit, onEditTitle, onSaveTitle, onCancelEdit,
   onTogglePublish, onRequestDelete, onCancelDelete, onConfirmDelete,
 }: AssetCardProps) {
   const cat = mimeCategory(asset.mimeType)
   const Icon = MIME_ICONS[cat]
-  const hasPreview = asset.publicUrl && (cat === 'image' || cat === 'video')
+  const previewUrl = getCommunityMediaUrl(asset.fileKey)
+  const hasPreview = cat === 'image' || cat === 'video'
 
   return (
     <article style={card.root}>
       <div style={{ ...card.thumb, background: hasPreview ? '#111' : MIME_GRADIENTS[cat] }}>
         {hasPreview ? (
           cat === 'image' ? (
-            <img src={asset.publicUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <img src={previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            <video src={asset.publicUrl} muted playsInline preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <video src={previewUrl} muted playsInline preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           )
         ) : (
           <Icon size={32} strokeWidth={1.5} />
@@ -215,6 +218,12 @@ export function AssetCard({
         </div>
         {asset.title && <span style={card.filename}>{asset.filename}</span>}
         <div style={card.meta}>
+          {locationLabel && (
+            <>
+              <span>{locationLabel}</span>
+              <span>·</span>
+            </>
+          )}
           <span>{asset.mimeType.split('/')[1] ?? asset.mimeType}</span>
           <span>·</span>
           <span>{formatBytes(asset.sizeBytes)}</span>

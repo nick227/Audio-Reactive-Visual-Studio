@@ -29,7 +29,7 @@ export class CommunityAssetService {
     title?: string | null
   }) {
     return db.communityAsset.create({
-      data: { ...data, published: false },
+      data: { ...data, published: true },
     })
   }
 

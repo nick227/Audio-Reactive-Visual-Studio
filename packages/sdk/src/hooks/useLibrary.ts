@@ -31,10 +31,16 @@ export function isLibraryItemEnabled(disabledKeys: string[] | undefined, itemKey
   return !disabledKeys?.includes(itemKey)
 }
 
-export function studioItemKey(assetId: string) {
+export function seedFxItemKey(assetId: string) {
   return `studio:${assetId}`
 }
 
-export function stockItemKey(stockId: string) {
-  return `stock:${stockId}`
+export function seedMediaItemKey(mediaId: string) {
+  return `stock:${mediaId}`
 }
+
+/** @deprecated use seedFxItemKey */
+export const studioItemKey = seedFxItemKey
+
+/** @deprecated use seedMediaItemKey */
+export const stockItemKey = seedMediaItemKey

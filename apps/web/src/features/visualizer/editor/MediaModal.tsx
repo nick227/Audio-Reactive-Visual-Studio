@@ -1,13 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 import { Search, Upload, X } from 'lucide-react'
-import { useLibraryConfig, stockItemKey } from '@avl/sdk'
+import { useLibraryConfig, seedMediaItemKey } from '@avl/sdk'
 import { getLayerCatalogItems, filterByLayerType, LAYER_TYPE_FILTERS, type FxItem, type LayerTypeFilter } from '../fx/fxLibrary'
 import { STOCK_IMAGES, STOCK_VIDEOS } from '../assets/stockMedia'
 import { PuppetThumbnail } from './PuppetThumbnail'
 
 export type UploadRecord = { id: string; name: string; url: string; fileKey: string }
 
-type MediaItem = UploadRecord & { kind: 'image' | 'video'; stock?: boolean; cloud?: boolean }
+type MediaItem = UploadRecord & { kind: 'image' | 'video'; seed?: boolean; cloud?: boolean }
 
 type Props = {
   onClose: () => void
@@ -42,9 +42,9 @@ export function MediaModal({
       const items: MediaItem[] = uploadedImages.map((item) => ({ ...item, kind: 'image' as const }))
       return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
     }
-    const stock = STOCK_IMAGES
-      .filter((item) => !disabledKeys?.includes(stockItemKey(item.id)))
-      .map((item) => ({ ...item, kind: 'image' as const, stock: true }))
+    const seed = STOCK_IMAGES
+      .filter((item) => !disabledKeys?.includes(seedMediaItemKey(item.id)))
+      .map((item) => ({ ...item, kind: 'image' as const, seed: true }))
     const cloud = (libraryConfig?.cloudAssets ?? [])
       .filter((a) => a.kind === 'image')
       .map((a) => ({
@@ -55,7 +55,7 @@ export function MediaModal({
         kind: 'image' as const,
         cloud: true,
       }))
-    const items = [...stock, ...cloud]
+    const items = [...seed, ...cloud]
     return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
   }, [query, typeFilter, uploadedImages, disabledKeys, libraryConfig?.cloudAssets])
 
@@ -66,9 +66,9 @@ export function MediaModal({
       const items: MediaItem[] = uploadedVideos.map((item) => ({ ...item, kind: 'video' as const }))
       return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
     }
-    const stock = STOCK_VIDEOS
-      .filter((item) => !disabledKeys?.includes(stockItemKey(item.id)))
-      .map((item) => ({ ...item, kind: 'video' as const, stock: true }))
+    const seed = STOCK_VIDEOS
+      .filter((item) => !disabledKeys?.includes(seedMediaItemKey(item.id)))
+      .map((item) => ({ ...item, kind: 'video' as const, seed: true }))
     const cloud = (libraryConfig?.cloudAssets ?? [])
       .filter((a) => a.kind === 'video')
       .map((a) => ({
@@ -79,7 +79,7 @@ export function MediaModal({
         kind: 'video' as const,
         cloud: true,
       }))
-    const items = [...stock, ...cloud]
+    const items = [...seed, ...cloud]
     return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
   }, [query, typeFilter, uploadedVideos, disabledKeys, libraryConfig?.cloudAssets])
 
@@ -173,7 +173,7 @@ export function MediaModal({
                       />
                     )}
                     {item.kind === 'video' && <span className="media-card-badge">Video</span>}
-                    {item.stock && <span className="media-card-badge media-card-badge--stock">Stock</span>}
+                    {item.seed && <span className="media-card-badge media-card-badge--stock">Seed</span>}
                     {item.cloud && <span className="media-card-badge media-card-badge--stock">Cloud</span>}
                   </div>
                   <div className="media-card-name">{item.name}</div>
@@ -188,9 +188,9 @@ export function MediaModal({
               {typeFilter === 'mine' && !query.trim()
                 ? 'No uploads yet — use Upload to add images or videos.'
                 : typeFilter === 'images' && !query.trim()
-                  ? 'No stock images match this search.'
+                  ? 'No seed images match this search.'
                   : typeFilter === 'videos' && !query.trim()
-                    ? 'No stock videos match this search.'
+                    ? 'No seed videos match this search.'
                     : 'No layers match this filter.'}
             </div>
           )}
