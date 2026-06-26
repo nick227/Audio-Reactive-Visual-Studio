@@ -4,10 +4,14 @@ import type { Project } from '../../project/types'
 import { createDefaultProject } from '../../project/defaultProject'
 
 const MAP_KEY = 'avl.cloud-project-map.v1'
-const SYNC_DEBOUNCE_MS = 2000
+const SYNCED_KEY = 'avl.cloud-title-synced.v1'
+const SYNC_DEBOUNCE_MS = 500
 
 type CloudProjectMap = Record<string, string>
-type SyncedTitle = { projectId: string; title: string }
+type SyncedTitles = Record<string, string>
+type Baseline = { userId: string; projectId: string; title: string }
+
+let syncInFlight = false
 
 function readMap(): CloudProjectMap {
   try {
@@ -22,6 +26,23 @@ function writeMap(map: CloudProjectMap) {
   localStorage.setItem(MAP_KEY, JSON.stringify(map))
 }
 
+function readSyncedTitles(): SyncedTitles {
+  try {
+    const raw = localStorage.getItem(SYNCED_KEY)
+    return raw ? (JSON.parse(raw) as SyncedTitles) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeSyncedTitle(key: string, title: string) {
+  localStorage.setItem(SYNCED_KEY, JSON.stringify({ ...readSyncedTitles(), [key]: title }))
+}
+
+function syncStorageKey(userId: string, projectId: string) {
+  return `${userId}:${projectId}`
+}
+
 function titleOnlyStub(project: Project): Project {
   const base = createDefaultProject()
   return {
@@ -34,7 +55,7 @@ function titleOnlyStub(project: Project): Project {
   }
 }
 
-/** Syncs project titles to the user's cloud account — metadata only, no document or media. */
+/** Syncs project titles to cloud on explicit rename only — metadata, no document or media. */
 export function useProjectTitleSync(project: Project) {
   const { data: meData } = useCurrentUser()
   const userId = meData?.data?.id
@@ -48,30 +69,46 @@ export function useProjectTitleSync(project: Project) {
   const updateProjectAsyncRef = useRef(updateProject.mutateAsync)
   updateProjectAsyncRef.current = updateProject.mutateAsync
 
-  const lastSyncedRef = useRef<SyncedTitle | null>(null)
-  const prevUserIdRef = useRef<string | null | undefined>(undefined)
+  const baselineRef = useRef<Baseline | null>(null)
+  const prevUserIdRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
-    const nextUserId = userId ?? null
-    if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== nextUserId) {
-      writeMap({})
-      lastSyncedRef.current = null
+    if (!userId) {
+      baselineRef.current = null
+      prevUserIdRef.current = undefined
+      return
     }
-    prevUserIdRef.current = nextUserId
-  }, [userId])
 
-  useEffect(() => {
-    if (!userId) return
+    if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== userId) {
+      writeMap({})
+    }
+    prevUserIdRef.current = userId
+
+    const baseline = baselineRef.current
+    if (!baseline || baseline.userId !== userId || baseline.projectId !== project.id) {
+      baselineRef.current = { userId, projectId: project.id, title: project.name }
+      return
+    }
+
+    if (baseline.title === project.name) return
+
+    baselineRef.current = { userId, projectId: project.id, title: project.name }
+
+    const storageKey = syncStorageKey(userId, project.id)
+    if (readSyncedTitles()[storageKey] === project.name) return
 
     const timer = window.setTimeout(() => {
       void (async () => {
         const current = projectRef.current
-        const last = lastSyncedRef.current
-        if (last?.projectId === current.id && last.title === current.name) return
+        if (!userId) return
 
-        const map = readMap()
-        const cloudId = map[current.id]
+        const key = syncStorageKey(userId, current.id)
+        if (readSyncedTitles()[key] === current.name || syncInFlight) return
+
+        syncInFlight = true
         try {
+          const map = readMap()
+          const cloudId = map[current.id]
           if (cloudId) {
             await updateProjectAsyncRef.current({ id: cloudId, title: current.name })
           } else {
@@ -82,9 +119,11 @@ export function useProjectTitleSync(project: Project) {
             })
             writeMap({ ...map, [current.id]: saved.id })
           }
-          lastSyncedRef.current = { projectId: current.id, title: current.name }
+          writeSyncedTitle(key, current.name)
         } catch {
           // Silent — local editing does not depend on cloud sync.
+        } finally {
+          syncInFlight = false
         }
       })()
     }, SYNC_DEBOUNCE_MS)
