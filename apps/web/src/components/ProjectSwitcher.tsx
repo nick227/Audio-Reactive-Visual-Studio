@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Plus } from 'lucide-react'
+import { ChevronDown, Copy, Plus, Trash2 } from 'lucide-react'
 import type { ProjectIndexEntry } from '../features/visualizer/project/projectLibrary'
 
 type Props = {
@@ -9,6 +9,8 @@ type Props = {
   onRename: (name: string) => void
   onSwitch: (id: string) => void
   onCreate: () => void
+  onDuplicate: (id: string) => void
+  onDelete: (id: string) => void
 }
 
 function formatWhen(iso: string) {
@@ -24,6 +26,8 @@ export function ProjectSwitcher({
   onRename,
   onSwitch,
   onCreate,
+  onDuplicate,
+  onDelete,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [draftName, setDraftName] = useState(projectName)
@@ -51,6 +55,15 @@ export function ProjectSwitcher({
     if (trimmed !== projectName) onRename(trimmed)
   }
 
+  function confirmDelete(item: ProjectIndexEntry) {
+    const ok = window.confirm(
+      `Delete "${item.name}"?\n\nThis cannot be undone. Media only used by this project will be removed from local storage.`,
+    )
+    if (!ok) return
+    setOpen(false)
+    void onDelete(item.id)
+  }
+
   return (
     <div className="project-switcher" ref={rootRef}>
       <input
@@ -59,9 +72,7 @@ export function ProjectSwitcher({
         onChange={(e) => setDraftName(e.target.value)}
         onBlur={commitName}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.currentTarget.blur()
-          }
+          if (e.key === 'Enter') e.currentTarget.blur()
           if (e.key === 'Escape') {
             setDraftName(projectName)
             e.currentTarget.blur()
@@ -82,19 +93,50 @@ export function ProjectSwitcher({
       {open && (
         <div className="project-switcher-menu" role="menu">
           {projects.map((item) => (
-            <button
+            <div
               key={item.id}
-              type="button"
-              role="menuitem"
-              className={`project-switcher-item${item.id === activeProjectId ? ' is-active' : ''}`}
-              onClick={() => {
-                setOpen(false)
-                onSwitch(item.id)
-              }}
+              className={`project-switcher-row${item.id === activeProjectId ? ' is-active' : ''}`}
             >
-              <span className="project-switcher-item-name">{item.name}</span>
-              <span className="project-switcher-item-meta">{formatWhen(item.updatedAt)}</span>
-            </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="project-switcher-item"
+                onClick={() => {
+                  setOpen(false)
+                  onSwitch(item.id)
+                }}
+              >
+                <span className="project-switcher-item-name">{item.name}</span>
+                <span className="project-switcher-item-meta">{formatWhen(item.updatedAt)}</span>
+              </button>
+              <div className="project-switcher-actions">
+                <button
+                  type="button"
+                  className="project-switcher-action"
+                  aria-label={`Duplicate ${item.name}`}
+                  title="Duplicate"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setOpen(false)
+                    onDuplicate(item.id)
+                  }}
+                >
+                  <Copy size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="project-switcher-action project-switcher-action--danger"
+                  aria-label={`Delete ${item.name}`}
+                  title="Delete"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    confirmDelete(item)
+                  }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
           ))}
           <button
             type="button"

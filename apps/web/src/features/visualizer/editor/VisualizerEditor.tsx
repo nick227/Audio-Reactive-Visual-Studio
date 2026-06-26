@@ -255,6 +255,8 @@ export function VisualizerEditor() {
           onRenameProject={renameProject}
           onSwitchProject={projectLibrary.switchToProject}
           onCreateProject={projectLibrary.createProject}
+          onDuplicateProject={projectLibrary.duplicateProject}
+          onDeleteProject={projectLibrary.deleteProject}
         />
       )}
 

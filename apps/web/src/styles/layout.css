@@ -133,14 +133,58 @@
   color: var(--text-secondary);
   font-size: 0.8125rem;
 }
+.project-switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  border-radius: calc(var(--radius-md) - 2px);
+}
+.project-switcher-row.is-active {
+  background: rgba(120,88,255,.14);
+}
+.project-switcher-row .project-switcher-item {
+  flex: 1;
+  min-width: 0;
+}
+.project-switcher-row.is-active .project-switcher-item {
+  color: var(--text-hi);
+}
+.project-switcher-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding-right: 0.25rem;
+  flex-shrink: 0;
+}
+.project-switcher-action {
+  width: 26px;
+  height: 26px;
+  border-radius: calc(var(--radius-md) - 2px);
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+.project-switcher-action:hover {
+  background: var(--white-8);
+  color: var(--text-hi);
+}
+.project-switcher-action--danger:hover {
+  color: #f87171;
+  background: rgba(248,113,113,.12);
+}
 .project-switcher-item:hover,
 .project-switcher-new:hover {
   background: var(--white-8);
   color: var(--text-hi);
 }
-.project-switcher-item.is-active {
-  background: rgba(120,88,255,.14);
-  color: var(--text-hi);
+.project-switcher-row:hover .project-switcher-item {
+  background: transparent;
+}
+.project-switcher-row:hover {
+  background: var(--white-8);
+}
+.project-switcher-row.is-active:hover {
+  background: rgba(120,88,255,.2);
 }
 .project-switcher-item-name {
   min-width: 0;

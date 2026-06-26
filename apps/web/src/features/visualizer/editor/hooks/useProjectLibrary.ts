@@ -1,7 +1,10 @@
 import { useCallback, useState } from 'react'
 import { createDefaultProject } from '../../project/defaultProject'
 import type { Project } from '../../project/types'
+import { idbDelete } from '../../storage/idbStorage'
 import {
+  deleteProjectFromLibrary,
+  duplicateProjectInLibrary,
   listProjects,
   loadProjectById,
   registerProject,
@@ -29,33 +32,52 @@ export function useProjectLibrary({
     setProjects(listProjects())
   }, [])
 
+  const activateProject = useCallback((next: Project) => {
+    onBeforeSwitch()
+    resetHistory(next)
+    onAfterSwitch(next)
+    refreshProjects()
+  }, [onAfterSwitch, onBeforeSwitch, refreshProjects, resetHistory])
+
   const switchToProject = useCallback((id: string) => {
     if (id === project.id) return
     saveProjectToLibrary(project)
     const loaded = loadProjectById(id)
     if (!loaded) return
-    onBeforeSwitch()
     setActiveProjectId(id)
-    resetHistory(loaded)
-    onAfterSwitch(loaded)
-    refreshProjects()
-  }, [onAfterSwitch, onBeforeSwitch, project, refreshProjects, resetHistory])
+    activateProject(loaded)
+  }, [activateProject, project])
 
   const createProject = useCallback(() => {
     saveProjectToLibrary(project)
     const fresh = createDefaultProject()
     registerProject(fresh)
-    onBeforeSwitch()
-    resetHistory(fresh)
-    onAfterSwitch(fresh)
-    refreshProjects()
-  }, [onAfterSwitch, onBeforeSwitch, project, refreshProjects, resetHistory])
+    activateProject(fresh)
+  }, [activateProject, project])
+
+  const duplicateProject = useCallback((id: string) => {
+    saveProjectToLibrary(project)
+    const source = id === project.id ? project : loadProjectById(id)
+    if (!source) return
+    const copy = duplicateProjectInLibrary(source)
+    activateProject(copy)
+  }, [activateProject, project])
+
+  const deleteProject = useCallback(async (id: string) => {
+    if (id !== project.id) saveProjectToLibrary(project)
+    const result = await deleteProjectFromLibrary(id, idbDelete)
+    if (!result.removed) return
+    if (result.switched && result.next) activateProject(result.next)
+    else refreshProjects()
+  }, [activateProject, project, refreshProjects])
 
   return {
     projects,
     activeProjectId: project.id,
     switchToProject,
     createProject,
+    duplicateProject,
+    deleteProject,
     refreshProjects,
   }
 }

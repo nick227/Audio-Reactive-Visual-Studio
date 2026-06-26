@@ -1,5 +1,8 @@
 import type { LayerInstance, Project } from './types'
 import { createDefaultProject } from './defaultProject'
+import { cloneProjectForDuplicate } from './projectClone'
+
+export { cloneProjectForDuplicate } from './projectClone'
 
 const INDEX_KEY = 'audio-visual-layer.index.v1'
 const ACTIVE_KEY = 'audio-visual-layer.active-project-id.v1'
@@ -183,11 +186,14 @@ function collectAllReferencedBlobKeys(excludeProjectId?: string): Set<string> {
 export async function deleteProjectFromLibrary(
   id: string,
   idbDelete: (key: string) => Promise<void>,
-): Promise<boolean> {
+): Promise<{ removed: boolean; switched: boolean; next: Project | null }> {
   ensureMigrated()
   const index = readIndex()
-  if (!index.some((item) => item.id === id)) return false
+  if (!index.some((item) => item.id === id)) {
+    return { removed: false, switched: false, next: null }
+  }
 
+  const wasActive = getActiveProjectId() === id
   const doomed = loadProjectById(id)
   const stillReferenced = collectAllReferencedBlobKeys(id)
   const orphanKeys = doomed
@@ -195,15 +201,29 @@ export async function deleteProjectFromLibrary(
     : []
 
   localStorage.removeItem(projectStorageKey(id))
-  writeIndex(index.filter((item) => item.id !== id))
+  const remaining = index
+    .filter((item) => item.id !== id)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  writeIndex(remaining)
 
-  const remaining = readIndex()
-  if (getActiveProjectId() === id) {
-    const nextId = remaining[0]?.id
-    if (nextId) setActiveProjectId(nextId)
-    else localStorage.removeItem(ACTIVE_KEY)
+  let next: Project | null = null
+  if (wasActive) {
+    if (remaining.length > 0) {
+      setActiveProjectId(remaining[0]!.id)
+      next = loadProjectById(remaining[0]!.id)
+    } else {
+      const fresh = createDefaultProject()
+      registerProject(fresh)
+      next = fresh
+    }
   }
 
   await Promise.all(orphanKeys.map((key) => idbDelete(key).catch(() => {})))
-  return true
+  return { removed: true, switched: wasActive, next }
+}
+
+export function duplicateProjectInLibrary(source: Project): Project {
+  const copy = cloneProjectForDuplicate(source)
+  registerProject(copy)
+  return copy
 }

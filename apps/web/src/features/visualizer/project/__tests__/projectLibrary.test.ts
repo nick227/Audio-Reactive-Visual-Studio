@@ -16,11 +16,13 @@ vi.stubGlobal('localStorage', createLocalStorage())
 import {
   collectProjectBlobKeys,
   deleteProjectFromLibrary,
+  duplicateProjectInLibrary,
   loadActiveProject,
   loadProjectById,
   listProjects,
   saveProjectToLibrary,
 } from '../projectLibrary'
+import { cloneProjectForDuplicate } from '../projectClone'
 
 const INDEX_KEY = 'audio-visual-layer.index.v1'
 const ACTIVE_KEY = 'audio-visual-layer.active-project-id.v1'
@@ -230,15 +232,100 @@ describe('projectLibrary', () => {
     localStorage.setItem(ACTIVE_KEY, 'drop')
 
     const deleted: string[] = []
-    await deleteProjectFromLibrary('drop', async (key) => {
+    const result = await deleteProjectFromLibrary('drop', async (key) => {
       deleted.push(key)
     })
 
+    expect(result.removed).toBe(true)
+    expect(result.switched).toBe(true)
+    expect(result.next?.id).toBe('keep')
     expect(deleted.sort()).toEqual([uniqueKey])
     expect(localStorage.getItem(storageKey('drop'))).toBeNull()
     expect(listProjects().map((item) => item.id)).toEqual(['keep'])
     expect(localStorage.getItem(ACTIVE_KEY)).toBe('keep')
     expect(deleted).not.toContain(sharedKey)
+  })
+
+  it('duplicateProjectInLibrary clones JSON with new id and shared blob keys', () => {
+    const source = makeProject({
+      id: 'source',
+      name: 'Original',
+      audio: {
+        id: 'aud-1',
+        kind: 'audio-track',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        url: 'blob:http://localhost/audio',
+        filename: 'a.mp3',
+        duration: 10,
+        fileKey: 'aud_shared',
+      },
+      layers: [{
+        id: 'layer-1',
+        kind: 'layer',
+        templateId: 'photo-cutout',
+        name: 'Pic',
+        visible: true,
+        locked: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        placement: { fit: 'contain', x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, anchor: 'center' },
+        reaction: { trigger: 'none', pulseAmount: 0, extraEffect: 'none', extraAmount: 0, smoothness: 0.5 },
+        settings: { src: 'blob:http://localhost/img', srcKey: 'img_shared' },
+      }],
+    })
+    saveProjectToLibrary(source)
+    localStorage.setItem(ACTIVE_KEY, 'source')
+
+    const copy = duplicateProjectInLibrary(source)
+    expect(copy.id).not.toBe('source')
+    expect(copy.name).toBe('Original Copy')
+    expect(copy.audio?.fileKey).toBe('aud_shared')
+    expect(copy.audio?.url).toBe('')
+    expect(copy.layers[0]?.settings.srcKey).toBe('img_shared')
+    expect(copy.layers[0]?.settings.src).toBe('')
+    expect(copy.layers[0]?.id).not.toBe('layer-1')
+    expect(listProjects()).toHaveLength(2)
+    expect(localStorage.getItem(ACTIVE_KEY)).toBe(copy.id)
+  })
+
+  it('cloneProjectForDuplicate does not copy blob urls', () => {
+    const source = makeProject({
+      id: 'source',
+      name: 'Mix',
+      layers: [{
+        id: 'layer-1',
+        kind: 'layer',
+        templateId: 'video-layer',
+        name: 'Vid',
+        visible: true,
+        locked: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        placement: { fit: 'contain', x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, anchor: 'center' },
+        reaction: { trigger: 'none', pulseAmount: 0, extraEffect: 'none', extraAmount: 0, smoothness: 0.5 },
+        settings: { src: 'blob:http://localhost/vid', srcKey: 'vid_1' },
+      }],
+    })
+    const copy = cloneProjectForDuplicate(source)
+    expect(copy.name).toBe('Mix Copy')
+    expect(copy.layers[0]?.settings.src).toBe('')
+    expect(copy.layers[0]?.settings.srcKey).toBe('vid_1')
+  })
+
+  it('deleting the last project creates a new empty active project', async () => {
+    const only = makeProject({ id: 'only', name: 'Solo' })
+    saveProjectToLibrary(only)
+    localStorage.setItem(ACTIVE_KEY, 'only')
+
+    const result = await deleteProjectFromLibrary('only', async () => {})
+
+    expect(result.removed).toBe(true)
+    expect(result.switched).toBe(true)
+    expect(result.next?.layers).toHaveLength(0)
+    expect(result.next?.audio).toBeUndefined()
+    expect(listProjects()).toHaveLength(1)
+    expect(listProjects()[0]?.id).toBe(result.next?.id)
   })
 })
 

@@ -12,6 +12,8 @@ interface Props {
   onRenameProject: (name: string) => void
   onSwitchProject: (id: string) => void
   onCreateProject: () => void
+  onDuplicateProject: (id: string) => void
+  onDeleteProject: (id: string) => void | Promise<void>
 }
 
 export function SiteTopBar({
@@ -22,6 +24,8 @@ export function SiteTopBar({
   onRenameProject,
   onSwitchProject,
   onCreateProject,
+  onDuplicateProject,
+  onDeleteProject,
 }: Props) {
   const navigate = useNavigate()
   const { data: me, isLoading } = useCurrentUser()
@@ -43,6 +47,8 @@ export function SiteTopBar({
           onRename={onRenameProject}
           onSwitch={onSwitchProject}
           onCreate={onCreateProject}
+          onDuplicate={onDuplicateProject}
+          onDelete={onDeleteProject}
         />
 
         <div style={styles.right}>
