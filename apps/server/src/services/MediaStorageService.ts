@@ -5,6 +5,8 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, Get
 import type { FastifyRequest } from 'fastify'
 
 const UPLOAD_ROOT = join(process.cwd(), 'uploads', 'community')
+const MAX_COMMUNITY_FILE_KEY_LENGTH = 191
+const FALLBACK_FILENAME = 'upload'
 
 function headerValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value
@@ -66,14 +68,30 @@ function contentTypeFromKey(fileKey: string) {
   return 'application/octet-stream'
 }
 
+function truncateFilename(filename: string, maxLength: number) {
+  if (maxLength <= 0) return ''
+  if (filename.length <= maxLength) return filename
+
+  const dotIndex = filename.lastIndexOf('.')
+  const hasExtension = dotIndex > 0 && dotIndex < filename.length - 1
+  const extension = hasExtension ? filename.slice(dotIndex) : ''
+  if (extension.length >= maxLength) {
+    return filename.slice(0, maxLength)
+  }
+
+  return `${filename.slice(0, maxLength - extension.length)}${extension}`
+}
+
 export class MediaStorageService {
   isCloudStorage() {
     return r2Configured()
   }
 
   buildFileKey(userId: string, filename: string) {
-    const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_')
-    return `community/${userId}/${randomBytes(8).toString('hex')}-${safe}`
+    const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_') || FALLBACK_FILENAME
+    const prefix = `community/${userId}/${randomBytes(8).toString('hex')}-`
+    const maxFilenameLength = MAX_COMMUNITY_FILE_KEY_LENGTH - prefix.length
+    return `${prefix}${truncateFilename(safe, maxFilenameLength)}`
   }
 
   /** API-proxied URL — required for COEP pages (Vite sets require-corp). */

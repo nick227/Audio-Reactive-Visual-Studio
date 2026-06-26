@@ -301,7 +301,7 @@ export function ExportPanel({ hasAudio, suggestedTitle, isExportingPng, isPrepar
             <button className="export-btn export-btn--redownload" onClick={onDownloadLastExport} disabled={busy}>
               <Download size={14} />
               <div>
-                <strong>Re-download</strong>
+                <strong>History</strong>
                 <span>{lastExport.filename}</span>
               </div>
             </button>
