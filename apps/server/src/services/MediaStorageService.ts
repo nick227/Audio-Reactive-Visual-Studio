@@ -2,13 +2,33 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync, u
 import { dirname, join } from 'path'
 import { randomBytes } from 'crypto'
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import type { FastifyRequest } from 'fastify'
 
 const UPLOAD_ROOT = join(process.cwd(), 'uploads', 'community')
 
-function serverBase() {
+function headerValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function serverBase(request?: FastifyRequest) {
   if (process.env.API_PUBLIC_URL) {
     return process.env.API_PUBLIC_URL.replace(/\/$/, '')
   }
+
+  if (request) {
+    const forwardedProto = headerValue(request.headers['x-forwarded-proto'])
+    const forwardedHost = headerValue(request.headers['x-forwarded-host'])
+    const proto = forwardedProto?.split(',')[0]?.trim() || request.protocol || 'http'
+    const host = forwardedHost?.split(',')[0]?.trim() || request.headers.host
+    if (host) {
+      return `${proto}://${host}`
+    }
+  }
+
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+  }
+
   return `http://localhost:${process.env.PORT ?? 3001}`
 }
 
@@ -57,13 +77,13 @@ export class MediaStorageService {
   }
 
   /** API-proxied URL — required for COEP pages (Vite sets require-corp). */
-  getPublicUrl(fileKey: string) {
+  getPublicUrl(fileKey: string, request?: FastifyRequest) {
     const encoded = fileKey.split('/').map(encodeURIComponent).join('/')
-    return `${serverBase()}/media/community/${encoded}`
+    return `${serverBase(request)}/media/community/${encoded}`
   }
 
-  createUploadUrl(fileKey: string) {
-    return `${serverBase()}/internal/community-upload/${encodeURIComponent(fileKey)}`
+  createUploadUrl(fileKey: string, request?: FastifyRequest) {
+    return `${serverBase(request)}/internal/community-upload/${encodeURIComponent(fileKey)}`
   }
 
   async putObject(fileKey: string, body: Buffer, mimeType: string) {

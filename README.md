@@ -137,6 +137,8 @@ PORT=3001
 SESSION_SECRET=use-a-long-random-secret
 CORS_ORIGIN=https://your-web-app.example.com
 APP_URL=https://your-web-app.example.com
+# Optional: set explicitly if your platform does not send forwarded host/proto headers.
+API_PUBLIC_URL=https://your-api.example.com
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 OPENAI_API_KEY=sk-...
 ADMIN_EMAIL=admin@gmail.com
@@ -185,4 +187,4 @@ Vite reads `VITE_*` values at build time, so rebuild the web app after changing 
 
 - Password reset emails are logged in development. Production email delivery still needs a real provider wired in.
 - R2 upload endpoints exist, but uploads are not fully implemented yet.
-- Cross-site production auth cookies require HTTPS and matching `CORS_ORIGIN` / `APP_URL` values.
+- Cross-site production auth cookies require HTTPS and matching `CORS_ORIGIN` / `APP_URL` values. `CORS_ORIGIN` accepts comma-separated origins for deploy previews or local admin testing.

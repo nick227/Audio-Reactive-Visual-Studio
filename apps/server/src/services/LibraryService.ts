@@ -1,6 +1,7 @@
 import { db } from '@avl/db'
 import { CommunityAssetService } from './CommunityAssetService'
 import { MediaStorageService } from './MediaStorageService'
+import type { FastifyRequest } from 'fastify'
 
 const communityAssets = new CommunityAssetService()
 const mediaStorage = new MediaStorageService()
@@ -24,7 +25,7 @@ export class LibraryService {
     return { itemKey, enabled: false }
   }
 
-  async getPublicConfig() {
+  async getPublicConfig(request?: FastifyRequest) {
     const disabledKeys = await this.listDisabledKeys()
     const assets = await communityAssets.listPublished()
     const cloudAssets = assets.map((asset) => ({
@@ -32,7 +33,7 @@ export class LibraryService {
       title: asset.title ?? asset.filename,
       filename: asset.filename,
       mimeType: asset.mimeType,
-      publicUrl: mediaStorage.getPublicUrl(asset.fileKey),
+      publicUrl: mediaStorage.getPublicUrl(asset.fileKey, request),
       kind: asset.mimeType.startsWith('video/')
         ? 'video' as const
         : asset.mimeType.startsWith('audio/')

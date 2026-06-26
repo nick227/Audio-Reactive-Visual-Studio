@@ -21,13 +21,21 @@ const mediaStorage = new MediaStorageService()
 const specPath = resolve(__dirname, '../../../packages/api-spec/openapi.yaml')
 const spec = load(readFileSync(specPath, 'utf-8')) as object
 
+function corsOrigins() {
+  const configured = process.env.CORS_ORIGIN ?? 'http://localhost:5173'
+  return configured
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+}
+
 async function main() {
   if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGIN) {
     throw new Error('CORS_ORIGIN env var is required in production')
   }
 
   await server.register(cors, {
-    origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+    origin: corsOrigins(),
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   })

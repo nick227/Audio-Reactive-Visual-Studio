@@ -2,6 +2,7 @@ import { AdminUserService } from '../services/AdminUserService'
 import { CommunityAssetService } from '../services/CommunityAssetService'
 import { LibraryService } from '../services/LibraryService'
 import { MediaStorageService } from '../services/MediaStorageService'
+import type { FastifyRequest } from 'fastify'
 
 const adminUserService = new AdminUserService()
 const communityAssetService = new CommunityAssetService()
@@ -63,7 +64,7 @@ function toCommunityAssetDto(asset: {
   uploadedBy: string
   createdAt: Date
   updatedAt: Date
-}) {
+}, request?: FastifyRequest) {
   return {
     id: asset.id,
     fileKey: asset.fileKey,
@@ -73,15 +74,15 @@ function toCommunityAssetDto(asset: {
     title: asset.title,
     published: asset.published,
     uploadedBy: asset.uploadedBy,
-    publicUrl: mediaStorage.getPublicUrl(asset.fileKey),
+    publicUrl: mediaStorage.getPublicUrl(asset.fileKey, request),
     createdAt: asset.createdAt.toISOString(),
     updatedAt: asset.updatedAt.toISOString(),
   }
 }
 
-export async function listCommunityAssets(_request: any, reply: any) {
+export async function listCommunityAssets(request: any, reply: any) {
   const assets = await communityAssetService.list()
-  return reply.send({ data: assets.map(toCommunityAssetDto) })
+  return reply.send({ data: assets.map((asset) => toCommunityAssetDto(asset, request)) })
 }
 
 export async function requestCommunityUploadUrl(request: any, reply: any) {
@@ -92,7 +93,7 @@ export async function requestCommunityUploadUrl(request: any, reply: any) {
     title?: string
   }
   const fileKey = mediaStorage.buildFileKey(request.user.id, body.filename)
-  const uploadUrl = mediaStorage.createUploadUrl(fileKey)
+  const uploadUrl = mediaStorage.createUploadUrl(fileKey, request)
   return reply.send({ data: { fileKey, uploadUrl } })
 }
 
@@ -129,14 +130,14 @@ export async function completeCommunityUpload(request: any, reply: any) {
     title: body.title ?? null,
   })
 
-  return reply.status(201).send({ data: toCommunityAssetDto(asset) })
+  return reply.status(201).send({ data: toCommunityAssetDto(asset, request) })
 }
 
 export async function updateCommunityAsset(request: any, reply: any) {
   const { id } = request.params as { id: string }
   const body = request.body as { title?: string | null; published?: boolean }
   const updated = await communityAssetService.update(id, body)
-  return reply.send({ data: toCommunityAssetDto(updated) })
+  return reply.send({ data: toCommunityAssetDto(updated, request) })
 }
 
 export async function deleteCommunityAsset(request: any, reply: any) {
