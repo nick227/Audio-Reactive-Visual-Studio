@@ -1,87 +1,182 @@
-# Audio Visual Layer V1
+# Audio Visual Layer
 
-A stronger foundation for a lightweight audio-reactive visual editor.
+Audio Visual Layer is a music visualizer studio you can run in the browser. Drop in a track, stack visual layers, add motion/audio-reactive effects, and build little animated scenes without having to wire everything together from scratch.
 
-V1 focuses on fast future entity implementation, tighter UI, clearer code boundaries, and lower render overhead.
+It is still a work in progress, but the core editor, auth, projects, profile, admin basics, and local media workflow are in place.
 
-## What this establishes
+![Audio Visual Layer editor](./screen.png)
 
-- Stacked editor layout: **Stage → Waveform → Assets**
-- Entity-oriented project model with `kind`, `id`, timestamps, and `schemaVersion`
-- Multiple ordered visual layers; row order controls visual stacking
-- Community asset template registry
-- Uploaded image layers use the same template/layer system as community assets
-- Audio engine based on Web Audio API
-- Normalized audio features: `bass`, `beat`, `vocals`, `highs`, `full`
-- Core row behavior: selected audio trigger drives layer scale/pulse
-- Optional subtle extra effects: float, rotate, drift, shake, glow, flicker, particles
-- Imperative stage runtime: animation frames update DOM transforms without pushing every frame through React state
-- Throttled UI indicators for waveform progress and audio meter
-- Direct stage placement via drag; manual movement switches placement to `custom`
-- Compact asset rows: trigger, pulse, extra effect, visibility, stacking, delete
-- Selected-layer inspector foundation for fit and size
-- Media modal foundation with community assets + user upload manager area
+## What You Need
 
-## Run
+- Node.js 20+
+- pnpm 10+
+- MySQL 8+
+- A Google OAuth client ID for sign-in
+
+Optional:
+
+- `OPENAI_API_KEY` for Whisper transcription
+- Cloudflare R2 credentials later, once upload support is fully wired
+
+## Local Setup
+
+Install dependencies:
 
 ```bash
-npm install
-npm run dev
+pnpm install
 ```
 
-Open the local Vite URL, upload an audio file, press play, and tweak asset rows.
+Create your env file:
 
-## Architecture
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set at least:
+
+```bash
+DATABASE_URL=mysql://root:password@localhost:3306/avl_dev
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+CORS_ORIGIN=http://localhost:5173
+APP_URL=http://localhost:5173
+VITE_API_URL=http://localhost:3001
+```
+
+Push the database schema and generate the SDK:
+
+```bash
+pnpm db:push
+pnpm sdk:generate
+```
+
+Or let the bootstrap script do the install/generate/db steps for you:
+
+```bash
+pnpm bootstrap
+```
+
+Start the app:
+
+```bash
+pnpm dev
+```
+
+Open:
+
+- Web app: `http://localhost:5173`
+- API: `http://localhost:3001`
+- API docs: `http://localhost:3001/docs`
+
+## Seeding An Admin
+
+Set these in `.env`:
+
+```bash
+ADMIN_EMAIL=admin@example.com
+ADMIN_DISPLAY_NAME=Admin
+```
+
+Then run:
+
+```bash
+pnpm db:seed
+```
+
+The seed creates or updates that user as an `ADMIN`. If the admin signs in with Google using the same email address, the app links that Google account to the seeded user.
+
+Admins can open `/admin` after signing in. Current admin features include user listing, role changes, suspend/unsuspend, delete guards, and basic community asset management. R2 upload buttons are still Phase 2 stubs.
+
+## Useful Commands
+
+```bash
+pnpm dev          # run web + API in dev mode
+pnpm build        # build packages and apps
+pnpm typecheck    # typecheck everything
+pnpm lint         # lint packages/apps that define lint scripts
+pnpm test         # run tests
+pnpm db:push      # push Prisma schema to MySQL
+pnpm db:seed      # seed/update the admin user
+pnpm db:studio    # open Prisma Studio
+pnpm sdk:generate # regenerate SDK types from OpenAPI
+```
+
+## Deploying
+
+The app deploys as two services from this repo:
+
+- `apps/server`: the Fastify API
+- `apps/web`: the Vite frontend
+
+Use a hosted MySQL database and set the same production `DATABASE_URL` on the API service and on any one-off migration/seed job.
+
+### API Service
+
+Build command:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter server build
+```
+
+Start command:
+
+```bash
+pnpm --filter server start
+```
+
+Production API env:
+
+```bash
+NODE_ENV=production
+DATABASE_URL=mysql://...
+PORT=3001
+SESSION_SECRET=use-a-long-random-secret
+CORS_ORIGIN=https://your-web-app.example.com
+APP_URL=https://your-web-app.example.com
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+OPENAI_API_KEY=sk-...
+```
+
+Before the first production start, run the schema push:
+
+```bash
+pnpm db:push
+```
+
+Then seed the first admin:
+
+```bash
+ADMIN_EMAIL=you@example.com ADMIN_DISPLAY_NAME="Your Name" pnpm db:seed
+```
+
+### Web Service
+
+Build command:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter './packages/*' build
+pnpm --filter web build
+```
+
+Output directory:
 
 ```txt
-src/features/visualizer/
-  audio/       Web Audio analysis and waveform peak building
-  assets/      Community asset template registry
-  editor/      Stage, waveform, asset list, media modal UI
-  entities/    Entity IDs, base entity types, simple entity helpers
-  project/     Serializable project/layer/audio/stage types
-  runtime/     Transform computation and DOM frame application
+apps/web/dist
 ```
 
-## Runtime model
+Production web env:
 
-```txt
-React editor state
-  owns project JSON, selected layer, modal state, row controls
-
-Audio engine
-  owns AudioContext, analyzer, feature extraction
-
-Stage runtime
-  receives audio features on requestAnimationFrame
-  updates layer DOM styles imperatively
-  avoids React re-rendering 60 times/second
-
-Asset registry
-  owns reusable template definitions
-  creates layer instances from templates
+```bash
+VITE_API_URL=https://your-api.example.com
+VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 ```
 
-## Key model
-
-```txt
-final layer transform = base placement + core audio pulse + optional extra effect
-```
-
-The saved project should remain pure JSON. Runtime animation objects, DOM refs, canvas contexts, GSAP timelines, or Three.js scenes should live outside project state.
-
-## Fast entity implementation pattern
-
-New product entities should follow the same shape:
-
-```ts
-type SomethingEntity = EntityBase<'something'> & {
-  // serializable fields only
-}
-```
-
-Keep entity creation in small factory functions and keep mutations in project/editor actions. This makes it easy to add `MediaAsset`, `ExportJob`, `TemplatePack`, `UserUpload`, `RenderPreset`, and `SceneVersion` without rewriting the UI.
+Vite reads `VITE_*` values at build time, so rebuild the web app after changing them.
 
 ## Notes
 
-This v1 still intentionally avoids final export/rendering complexity. The priority is a clean product foundation that can absorb Canvas, GSAP, Three.js templates, persistent uploads, and export jobs without collapsing into one giant component.
+- Password reset emails are logged in development. Production email delivery still needs a real provider wired in.
+- R2 upload endpoints exist, but uploads are not fully implemented yet.
+- Cross-site production auth cookies require HTTPS and matching `CORS_ORIGIN` / `APP_URL` values.
