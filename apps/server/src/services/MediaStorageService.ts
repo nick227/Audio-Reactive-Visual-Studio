@@ -5,6 +5,13 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } fr
 
 const UPLOAD_ROOT = join(process.cwd(), 'uploads', 'community')
 
+function serverBase() {
+  if (process.env.API_PUBLIC_URL) {
+    return process.env.API_PUBLIC_URL.replace(/\/$/, '')
+  }
+  return `http://localhost:${process.env.PORT ?? 3001}`
+}
+
 function r2Configured() {
   return Boolean(
     process.env.R2_ACCOUNT_ID &&
@@ -39,14 +46,13 @@ export class MediaStorageService {
     if (r2Configured() && process.env.R2_PUBLIC_BASE_URL) {
       return `${process.env.R2_PUBLIC_BASE_URL.replace(/\/$/, '')}/${fileKey}`
     }
-    const base = process.env.APP_URL ?? `http://localhost:${process.env.PORT ?? 3001}`
-    return `${base.replace(/\/$/, '')}/media/community/${encodeURIComponent(fileKey)}`
+    const base = serverBase()
+    return `${base}/media/community/${encodeURIComponent(fileKey)}`
   }
 
   /** Browser uploads go through the API (avoids R2 bucket CORS). */
   createUploadUrl(fileKey: string) {
-    const base = process.env.APP_URL ?? `http://localhost:${process.env.PORT ?? 3001}`
-    return `${base.replace(/\/$/, '')}/internal/community-upload/${encodeURIComponent(fileKey)}`
+    return `${serverBase()}/internal/community-upload/${encodeURIComponent(fileKey)}`
   }
 
   async putObject(fileKey: string, body: Buffer, mimeType: string) {
