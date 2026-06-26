@@ -30,6 +30,7 @@ type UsePrerenderCacheParams = {
   isPreparing: boolean
   isExportingVideo: boolean
   preferredExportPresetId: PresetId
+  prerenderCacheRef: RefObject<FrameChunkCache>
   stageRef: RefObject<StageHandle | null>
   playbackTimeMsRef: RefObject<number>
 }
@@ -61,6 +62,7 @@ export function usePrerenderCache({
   isPreparing,
   isExportingVideo,
   preferredExportPresetId,
+  prerenderCacheRef,
   stageRef,
   playbackTimeMsRef,
 }: UsePrerenderCacheParams) {
@@ -69,7 +71,6 @@ export function usePrerenderCache({
     totalChunks: 0,
     cachedFrames: 0,
   })
-  const prerenderCacheRef = useRef(new FrameChunkCache(8, 360))
   const prerenderFingerprintsRef = useRef<Map<number, RenderChunkIdentity> | null>(null)
   const prerenderRevisionRef = useRef(0)
 
@@ -189,6 +190,7 @@ export function usePrerenderCache({
     isExportingVideo,
     isPreparing,
     playbackTimeMsRef,
+    prerenderCacheRef,
     preferredExportPresetId,
     project,
     rendererMode,
@@ -198,5 +200,5 @@ export function usePrerenderCache({
 
   useEffect(() => () => prerenderCacheRef.current.clear(), [])
 
-  return { prerenderStats, prerenderCacheRef }
+  return { prerenderStats }
 }
