@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
-import { Clapperboard, Captions, Download, Loader2, Maximize2, Minimize2, Monitor, Pause, Play, Plus, Smartphone, Upload, X } from 'lucide-react'
+import { Captions, Download, Loader2, Maximize2, Minimize2, Pause, Play, Plus, Upload, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import { useCurrentUser, useCreateProject, useUpdateProject } from '@avl/sdk'
 import { AudioEngine } from '../audio/AudioEngine'
@@ -48,38 +48,20 @@ import {
   type CachedChunkStats,
   type RenderChunkIdentity,
 } from '../prerender'
+import {
+  commitHistory,
+  MAX_HISTORY,
+  patchHistoryPresent,
+  redoHistory,
+  resetHistory,
+  type HistoryState,
+  undoHistory,
+} from './core/history'
+import { applyLayerPatch } from './core/layerPatch'
+import { getActiveStagePresetId, stagePresets } from './core/stagePresets'
+import { clearLastExportMeta, loadLastExportMeta, saveLastExportMeta, type LastExportMeta } from './core/exportMeta'
 
 const UI_FRAME_INTERVAL_MS = 100
-const MAX_HISTORY = 50
-
-type HistoryState = {
-  past: Project[]
-  present: Project
-  future: Project[]
-}
-
-const stagePresets: Array<{ id: StagePresetId; label: string; icon: typeof Smartphone; width: number; height: number }> = [
-  { id: 'mobile', label: 'Mobile', icon: Smartphone, width: 1080, height: 1920 },
-  { id: 'desktop', label: 'Desktop', icon: Monitor, width: 1920, height: 1080 },
-  { id: 'film', label: 'Film', icon: Clapperboard, width: 2048, height: 858 },
-]
-
-// Shared layer-patch logic used by both committed and transient updaters.
-function applyLayerPatch(layers: LayerInstance[], layerId: string, patch: Partial<LayerInstance>): LayerInstance[] {
-  return layers.map((layer) =>
-    layer.id === layerId
-      ? {
-          ...layer,
-          ...patch,
-          placement: { ...layer.placement, ...patch.placement },
-          reaction: { ...layer.reaction, ...patch.reaction },
-          settings: { ...layer.settings, ...patch.settings },
-          timing: patch.timing ?? layer.timing,
-          updatedAt: nowIso(),
-        }
-      : layer
-  )
-}
 
 function cloneProject(p: Project): Project {
   return structuredClone(p)
@@ -180,12 +162,7 @@ export function VisualizerEditor() {
   const [exportPhase, setExportPhase] = useState<WebCodecsExportPhase | ''>('')
   const [exportOpen, setExportOpen] = useState(false)
   const [exportSnapshot, setExportSnapshot] = useState<Project | null>(null)
-  const [lastExport, setLastExport] = useState<{ filename: string; mimeType: string } | null>(() => {
-    try {
-      const raw = localStorage.getItem('avl-export-webm-meta')
-      return raw ? (JSON.parse(raw) as { filename: string; mimeType: string }) : null
-    } catch { return null }
-  })
+  const [lastExport, setLastExport] = useState<LastExportMeta | null>(() => loadLastExportMeta())
   const stageProject = exportSnapshot ?? project
   const [subtitleOpen, setSubtitleOpen] = useState(false)
   const [videoSettingsLayerId, setVideoSettingsLayerId] = useState<string | null>(null)
@@ -362,7 +339,10 @@ export function VisualizerEditor() {
     stageRef.current?.updateFrame(features, performance.now(), timeMs)
   }, [])
 
-  const activeStagePreset = useMemo(() => stagePresets.find((p) => p.width === project.stage.width && p.height === project.stage.height)?.id ?? 'desktop', [project.stage.height, project.stage.width])
+  const activeStagePreset = useMemo(
+    () => getActiveStagePresetId(project.stage.width, project.stage.height),
+    [project.stage.height, project.stage.width],
+  )
   const suggestedExportTitle = useMemo(
     () => suggestExportTitle(project.audio?.filename, project.name),
     [project.audio?.filename, project.name],
@@ -392,43 +372,20 @@ export function VisualizerEditor() {
 
   // Updates present without touching past/future — used for live drag updates.
   const patchPresent = useCallback((recipe: (current: Project) => Project) => {
-    setHistory((h) => ({ ...h, present: { ...recipe(h.present), updatedAt: nowIso() } }))
+    setHistory((h) => patchHistoryPresent(h, recipe))
   }, [])
 
   // Commits a change to history. Clears the redo stack.
   const commitProject = useCallback((recipe: (current: Project) => Project) => {
-    setHistory((h) => {
-      const next = recipe(h.present)
-      return {
-        past: [...h.past.slice(-(MAX_HISTORY - 1)), h.present],
-        present: { ...next, updatedAt: nowIso() },
-        future: [],
-      }
-    })
+    setHistory((h) => commitHistory(h, recipe))
   }, [])
 
   const undo = useCallback(() => {
-    setHistory((h) => {
-      if (!h.past.length) return h
-      const previous = h.past[h.past.length - 1]
-      return {
-        past: h.past.slice(0, -1),
-        present: previous,
-        future: [h.present, ...h.future.slice(0, MAX_HISTORY - 1)],
-      }
-    })
+    setHistory(undoHistory)
   }, [])
 
   const redo = useCallback(() => {
-    setHistory((h) => {
-      if (!h.future.length) return h
-      const next = h.future[0]
-      return {
-        past: [...h.past.slice(-(MAX_HISTORY - 1)), h.present],
-        present: next,
-        future: h.future.slice(1),
-      }
-    })
+    setHistory(redoHistory)
   }, [])
 
   const persistExportTitle = useCallback((title: string) => {
@@ -768,7 +725,7 @@ export function VisualizerEditor() {
     activeAudioObjectUrlRef.current = null
     if (audioRef.current) audioRef.current.src = ''
     const fresh = createDefaultProject()
-    setHistory({ past: [], present: fresh, future: [] })
+    setHistory(resetHistory(fresh))
     setSelectedLayerId(fresh.layers[fresh.layers.length - 1]?.id ?? '')
     setPeaks(new Array(160).fill(0.12))
     setProgress(0)
@@ -1054,7 +1011,7 @@ export function VisualizerEditor() {
             try {
               await idbPut('export-webm-last', blob)
               const meta = { filename, mimeType }
-              localStorage.setItem('avl-export-webm-meta', JSON.stringify(meta))
+              saveLastExportMeta(meta)
               setLastExport(meta)
             } catch { /* IDB unavailable — download still proceeds */ }
             if (abort.signal.aborted) throw new DOMException('Export cancelled', 'AbortError')
@@ -1132,7 +1089,7 @@ export function VisualizerEditor() {
           try {
             await idbPut('export-webm-last', blob)
             const meta = { filename, mimeType }
-            localStorage.setItem('avl-export-webm-meta', JSON.stringify(meta))
+            saveLastExportMeta(meta)
             setLastExport(meta)
           } catch { /* IDB unavailable — download still proceeds */ }
           const url = URL.createObjectURL(blob)
@@ -1173,7 +1130,7 @@ export function VisualizerEditor() {
 
   const clearLastExport = useCallback(() => {
     void idbDelete('export-webm-last')
-    localStorage.removeItem('avl-export-webm-meta')
+    clearLastExportMeta()
     setLastExport(null)
   }, [])
 
