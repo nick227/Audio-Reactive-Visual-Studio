@@ -9,7 +9,7 @@ import { buildWaveformPeaks } from '../audio/waveform'
 import type { AudioFeatures } from '../audio/audioTypes'
 import { silentAudioFeatures } from '../audio/audioTypes'
 import { createDefaultProject } from '../project/defaultProject'
-import { clearSavedProject, loadLocalSaveMeta, saveProject } from '../project/projectPersistence'
+import { clearSavedProject } from '../project/projectPersistence'
 import type { LayerInstance, Project, StagePresetId } from '../project/types'
 import { assetRegistry } from '../assets/registry'
 import { createEntityId, nowIso } from '../entities/entityTypes'
@@ -53,6 +53,9 @@ import { getActiveStagePresetId, stagePresets } from './core/stagePresets'
 import { clearLastExportMeta, loadLastExportMeta, saveLastExportMeta, type LastExportMeta } from './core/exportMeta'
 import { useEditorModal } from './hooks/useEditorModal'
 import { useEditorHistory } from './hooks/useEditorHistory'
+import { useEditorPersistence } from './hooks/useEditorPersistence'
+import { useManagedObjectUrls } from './hooks/useManagedObjectUrls'
+import { useMediaLibrary } from './hooks/useMediaLibrary'
 
 const UI_FRAME_INTERVAL_MS = 100
 
@@ -89,10 +92,10 @@ export function VisualizerEditor() {
   )
   const [isSaving, setIsSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState<string | null>(null)
-  const [localSavedAt, setLocalSavedAt] = useState<string | null>(() => loadLocalSaveMeta()?.savedAt ?? null)
 
   // Refs for auto-cloud-save and beforeunload — avoids stale closures in intervals/event handlers
   const cloudDirtyRef = useRef(false)
+  const { localSavedAt } = useEditorPersistence({ project, cloudDirtyRef })
   const lastAutoCloudSaveRef = useRef(cloudProjectId ? Date.now() : 0)
   const projectRef = useRef(project)
   projectRef.current = project
@@ -139,8 +142,6 @@ export function VisualizerEditor() {
   const [peaks, setPeaks] = useState<number[]>(new Array(160).fill(0.12))
   const [progress, setProgress] = useState(0)
   const { modal, closeModal, openMediaModal, openSubtitleModal: showSubtitleModal, openVideoSettingsModal, openExportModal } = useEditorModal()
-  const [sessionUploads, setSessionUploads] = useState<Array<{ id: string; name: string; url: string; fileKey: string }>>([])
-  const [sessionVideos, setSessionVideos] = useState<Array<{ id: string; name: string; url: string; fileKey: string }>>([])
   const [isExporting, setIsExporting] = useState(false)
   const [isPreparing, setIsPreparing] = useState(false)
   const [preparePhase, setPreparePhase] = useState('')
@@ -162,9 +163,7 @@ export function VisualizerEditor() {
   const rafRef = useRef<number | null>(null)
   const stageRef = useRef<StageHandle | null>(null)
   const lastUiFrameRef = useRef(0)
-  const managedObjectUrlsRef = useRef(new Map<string, number>())
-  const activeAudioObjectUrlRef = useRef<string | null>(null)
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { activeAudioObjectUrlRef, registerObjectUrl, revokeManagedObjectUrl, revokeAllObjectUrls } = useManagedObjectUrls()
   const tickRef = useRef<(time: number) => void>(() => {})
   const exportCancelRef = useRef(false)
   const exportAbortRef = useRef<AbortController | null>(null)
@@ -194,6 +193,17 @@ export function VisualizerEditor() {
   )
   const rendererMode = rendererDiagnostics.mode
   const hasAudio = Boolean(project.audio?.url)
+  const mediaLibrary = useMediaLibrary({
+    project,
+    patchPresent,
+    commitProject,
+    audioRef,
+    activeAudioObjectUrlRef,
+    registerObjectUrl,
+    setSelectedLayerId,
+    setPeaks,
+    closeModal,
+  })
 
   const updatePrerenderStats = useCallback((totalChunks: number, identities?: Iterable<RenderChunkIdentity>) => {
     setPrerenderStats(prerenderCacheRef.current.stats(totalChunks, identities))
@@ -420,128 +430,14 @@ export function VisualizerEditor() {
     return () => window.removeEventListener('keydown', handler)
   }, [isFullScreen])
 
-  // ── Persistence ─────────────────────────────────────────────────────────────
-
-  // Debounced local save — flush synchronously on cleanup so unmount/close doesn't lose the last edit.
-  useEffect(() => {
-    cloudDirtyRef.current = true
-    if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(() => {
-      saveProject(project)
-      setLocalSavedAt(new Date().toISOString())
-      saveTimerRef.current = null
-    }, 400)
-    return () => {
-      if (saveTimerRef.current !== null) {
-        clearTimeout(saveTimerRef.current)
-        saveProject(project)
-        setLocalSavedAt(new Date().toISOString())
-        saveTimerRef.current = null
-      }
-    }
-  }, [project])
-
-  // ── Blob URL management ──────────────────────────────────────────────────────
-
-  const registerObjectUrl = useCallback((url: string) => {
-    if (url.startsWith('blob:')) {
-      managedObjectUrlsRef.current.set(url, (managedObjectUrlsRef.current.get(url) ?? 0) + 1)
-    }
-    return url
-  }, [])
-
-  const revokeManagedObjectUrl = useCallback((url: unknown) => {
-    if (typeof url !== 'string' || !url.startsWith('blob:')) return
-    const count = managedObjectUrlsRef.current.get(url) ?? 0
-    if (count <= 1) {
-      URL.revokeObjectURL(url)
-      managedObjectUrlsRef.current.delete(url)
-      if (activeAudioObjectUrlRef.current === url) activeAudioObjectUrlRef.current = null
-    } else {
-      managedObjectUrlsRef.current.set(url, count - 1)
-    }
-  }, [])
-
-  // Restore blob URLs from IndexedDB after initial load.
-  // Also repopulates the session media lists so the media panel shows previously-uploaded files.
-  useEffect(() => {
-    async function restoreBlobs() {
-      let anyChanged = false
-      const restoredUploads: typeof sessionUploads = []
-      const restoredVideos: typeof sessionVideos = []
-
-      const restoredLayers = await Promise.all(
-        project.layers.map(async (layer) => {
-          const srcKey = layer.settings.srcKey
-          if (typeof srcKey !== 'string' || !srcKey) return layer
-          try {
-            const blob = await idbGet(srcKey)
-            if (!blob) return layer
-            const url = registerObjectUrl(URL.createObjectURL(blob))
-            anyChanged = true
-            const entry = { id: srcKey, name: layer.name, url, fileKey: srcKey }
-            if (srcKey.startsWith('img_')) restoredUploads.push(entry)
-            else if (srcKey.startsWith('vid_')) restoredVideos.push(entry)
-            return { ...layer, settings: { ...layer.settings, src: url } }
-          } catch {
-            return layer
-          }
-        })
-      )
-
-      let restoredAudio = project.audio
-      if (project.audio?.fileKey) {
-        try {
-          const blob = await idbGet(project.audio.fileKey)
-          if (blob && audioRef.current) {
-            const url = registerObjectUrl(URL.createObjectURL(blob))
-            activeAudioObjectUrlRef.current = url
-            audioRef.current.src = url
-            audioRef.current.load()
-            restoredAudio = { ...project.audio, url, updatedAt: nowIso() }
-            const file = new File([blob], project.audio.filename, { type: blob.type })
-            buildWaveformPeaks(file).then(setPeaks).catch(() => {})
-            anyChanged = true
-          }
-        } catch {
-          // IDB unavailable or entry missing — continue without audio
-        }
-      }
-
-      if (restoredUploads.length) setSessionUploads(restoredUploads)
-      if (restoredVideos.length) setSessionVideos(restoredVideos)
-
-      if (anyChanged) {
-        // Patch present only — blob restoration is not a user action.
-        patchPresent((current) => ({ ...current, layers: restoredLayers, audio: restoredAudio }))
-      }
-    }
-    void restoreBlobs()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     const audio = audioRef.current
-    const urlMap = managedObjectUrlsRef.current
     const prerenderCache = prerenderCacheRef.current
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       audio?.pause()
-      for (const url of urlMap.keys()) URL.revokeObjectURL(url)
-      urlMap.clear()
       prerenderCache.clear()
     }
-  }, [])
-
-  // Warn before tab close if the project has any content.
-  // Local save happens within 400ms so actual data loss only occurs in incognito or after clearing storage.
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      const p = projectRef.current
-      if (!p.audio && p.layers.length === 0) return
-      e.preventDefault()
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
   }, [])
 
   // Auto-save to cloud every 5 minutes for signed-in users.
@@ -606,50 +502,6 @@ export function VisualizerEditor() {
   }, [commitProject])
 
 
-  const addUploadedImage = useCallback(async (file: File) => {
-    const template = assetRegistry.get('photo-cutout')
-    if (!template) return
-    const url = registerObjectUrl(URL.createObjectURL(file))
-    const fileKey = `img_${Date.now()}_${file.name}`
-    try { await idbPut(fileKey, file) } catch { /* IDB unavailable */ }
-    const layer = template.createLayer({ name: file.name, settings: { src: url, srcKey: fileKey } })
-    commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
-    setSelectedLayerId(layer.id)
-    setSessionUploads((prev) => [...prev, { id: fileKey, name: file.name, url, fileKey }])
-    closeModal()
-  }, [closeModal, commitProject, registerObjectUrl])
-
-  const reuseUpload = useCallback((url: string, name: string, fileKey: string) => {
-    const template = assetRegistry.get('photo-cutout')
-    if (!template) return
-    const layer = template.createLayer({ name, settings: { src: url, srcKey: fileKey } })
-    commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
-    setSelectedLayerId(layer.id)
-    closeModal()
-  }, [closeModal, commitProject])
-
-  const addUploadedVideo = useCallback(async (file: File) => {
-    const template = assetRegistry.get('video-layer')
-    if (!template) return
-    const url = registerObjectUrl(URL.createObjectURL(file))
-    const fileKey = `vid_${Date.now()}_${file.name}`
-    try { await idbPut(fileKey, file) } catch { /* IDB unavailable */ }
-    const layer = template.createLayer({ name: file.name, settings: { src: url, srcKey: fileKey } })
-    commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
-    setSelectedLayerId(layer.id)
-    setSessionVideos((prev) => [...prev, { id: fileKey, name: file.name, url, fileKey }])
-    closeModal()
-  }, [closeModal, commitProject, registerObjectUrl])
-
-  const reuseVideo = useCallback((url: string, name: string, fileKey: string) => {
-    const template = assetRegistry.get('video-layer')
-    if (!template) return
-    const layer = template.createLayer({ name, settings: { src: url, srcKey: fileKey } })
-    commitProject((current) => ({ ...current, layers: [...current.layers, layer] }))
-    setSelectedLayerId(layer.id)
-    closeModal()
-  }, [closeModal, commitProject])
-
   // Does NOT revoke blob URLs or delete IDB entries — undo may restore the layer.
   // Cleanup happens on resetProject or session end.
   const removeLayer = useCallback((layerId: string) => {
@@ -679,9 +531,7 @@ export function VisualizerEditor() {
     }
     if (project.audio?.fileKey) void idbDelete(project.audio.fileKey)
     clearSavedProject()
-    for (const url of managedObjectUrlsRef.current.keys()) URL.revokeObjectURL(url)
-    managedObjectUrlsRef.current.clear()
-    activeAudioObjectUrlRef.current = null
+    revokeAllObjectUrls()
     if (audioRef.current) audioRef.current.src = ''
     const fresh = createDefaultProject()
     resetHistory(fresh)
@@ -1219,12 +1069,12 @@ export function VisualizerEditor() {
           <MediaModal
             onClose={closeModal}
             onAddTemplate={addTemplate}
-            onUploadImage={(file) => void addUploadedImage(file)}
-            onUploadVideo={(file) => void addUploadedVideo(file)}
-            uploadedImages={sessionUploads}
-            uploadedVideos={sessionVideos}
-            onReuseImage={reuseUpload}
-            onReuseVideo={reuseVideo}
+            onUploadImage={(file) => void mediaLibrary.addUploadedImage(file)}
+            onUploadVideo={(file) => void mediaLibrary.addUploadedVideo(file)}
+            uploadedImages={mediaLibrary.sessionUploads}
+            uploadedVideos={mediaLibrary.sessionVideos}
+            onReuseImage={mediaLibrary.reuseUpload}
+            onReuseVideo={mediaLibrary.reuseVideo}
           />
         )}
 
