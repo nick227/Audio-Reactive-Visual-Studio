@@ -42,36 +42,18 @@ export type LayerTypeFilter =
   | 'mine'
   | 'images'
   | 'videos'
-  | 'text'
-  | 'backdrop'
-  | 'effects'
-  | 'objects'
+  | 'fx'
 
 export const LAYER_TYPE_FILTERS: { id: LayerTypeFilter; label: string }[] = [
   { id: 'mine', label: 'Mine' },
   { id: 'images', label: 'Images' },
   { id: 'videos', label: 'Videos' },
-  { id: 'text', label: 'Text' },
-  { id: 'backdrop', label: 'Backdrops' },
-  { id: 'effects', label: 'Effects' },
-  { id: 'objects', label: 'Objects' },
+  { id: 'fx', label: 'FX' },
 ]
 
 export function filterByLayerType(items: FxItem[], filter: LayerTypeFilter): FxItem[] {
   if (filter === 'mine' || filter === 'images' || filter === 'videos') return []
-  if (filter === 'text') return items.filter((item) => item.category === 'typography')
-  if (filter === 'backdrop') {
-    return items.filter((item) => item.collection === 'backgrounds' || item.collection === 'visualizers')
-  }
-  if (filter === 'effects') {
-    return items.filter((item) => item.collection === 'particles' || item.collection === 'fx-overlays')
-  }
-  if (filter === 'objects') {
-    return items.filter((item) => {
-      if (item.collection === 'objects' || item.collection === 'puppets') return true
-      return item.collection === 'type-frames' && item.category !== 'typography'
-    })
-  }
+  if (filter === 'fx') return items
   return []
 }
 

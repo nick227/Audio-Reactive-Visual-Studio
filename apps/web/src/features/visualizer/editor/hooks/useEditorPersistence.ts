@@ -28,12 +28,14 @@ export function useEditorPersistence({ project }: UseEditorPersistenceParams) {
   }, [project])
 
   useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (!project.audio && project.layers.length === 0) return
-      e.preventDefault()
+    const flushPendingSave = () => {
+      if (saveTimerRef.current === null) return
+      clearTimeout(saveTimerRef.current)
+      saveProject(project)
+      saveTimerRef.current = null
     }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
+    window.addEventListener('beforeunload', flushPendingSave)
+    return () => window.removeEventListener('beforeunload', flushPendingSave)
   }, [project])
 
   return { localSavedAt }

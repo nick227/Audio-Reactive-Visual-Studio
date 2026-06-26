@@ -33,8 +33,7 @@
   height: min(88vh, 640px);
 }
 .layer-browser-header {
-  flex-shrink: 0; display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  flex-shrink: 0; display: flex;
   align-items: center; gap: 10px;
   padding: 12px 14px; border-bottom: 1px solid var(--border-dim);
   background: var(--white-3);
@@ -55,9 +54,11 @@
 }
 .fx-browser-tools { display: flex; gap: 12px; align-items: center; padding: 14px 18px; flex-shrink: 0; }
 .fx-browser-tools .fx-search { flex: 1; }
-.fx-search { flex: 1; min-width: 240px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--border-base); border-radius: var(--radius-xl); padding: 12px 14px; background: rgba(255,255,255,.065); color: #bdbbd0; }
+.fx-search { flex: 1; width: 600px;  display: flex; align-items: center; gap: 10px; border: 1px solid var(--border-base); border-radius: var(--radius-xl); padding: 12px 14px; background: rgba(255,255,255,.065); color: #bdbbd0; }
 .fx-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #fff; }
 .fx-search input::placeholder { color: #7b788f; }
+.layer-browser-upload-btn,
+.modal-close-btn { max-width: 100px; }
 .fx-tab-strip { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 12px; }
 .fx-tab-strip button { white-space: nowrap; border: 1px solid var(--border-dim); border-radius: var(--radius-full); padding: 9px 12px; background: var(--white-6); color: #c9c6db; font-size: 12px; font-weight: 800; user-select: none; }
 .fx-tab-strip button.active { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
@@ -74,7 +75,7 @@
 }
 .layer-browser-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, max-content));
+  grid-template-columns: repeat(auto-fill, minmax(256px, max-content));
   justify-content: start;
   gap: 8px;
   width: 100%;
@@ -92,7 +93,7 @@
 .media-empty-state { padding: 32px 12px; color: var(--text-ghost); font-size: 13px; text-align: center; }
 
 /* ── Media cards ── */
-.media-card { display: flex; flex-direction: column; min-width: 0; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.035); text-align: left; color: white; transition: border-color 140ms, background 140ms; cursor: pointer; padding: 0; max-width: 120px; }
+.media-card { display: flex; flex-direction: column; min-width: 0; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.035); text-align: left; color: white; transition: border-color 140ms, background 140ms; cursor: pointer; padding: 0; max-width: 256px; }
 .media-card:hover { border-color: rgba(242,240,255,.3); background: var(--white-6); }
 .media-card-thumb { aspect-ratio: 4 / 3; width: 100%; overflow: hidden; position: relative; background: #11111c; flex-shrink: 0; isolation: isolate; }
 .media-card-thumb img, .media-card-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }

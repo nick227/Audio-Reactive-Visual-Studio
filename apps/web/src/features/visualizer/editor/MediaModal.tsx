@@ -35,6 +35,19 @@ export function MediaModal({
     [query, typeFilter, disabledKeys],
   )
 
+  const cloudMediaItems = useMemo((): MediaItem[] => (
+    (libraryConfig?.cloudAssets ?? [])
+      .filter((a) => a.kind === 'image' || a.kind === 'video')
+      .map((a) => ({
+        id: `cloud-${a.id}`,
+        name: a.title,
+        url: a.publicUrl,
+        fileKey: `cloud:${a.id}`,
+        kind: a.kind === 'video' ? 'video' as const : 'image' as const,
+        cloud: true,
+      }))
+  ), [libraryConfig?.cloudAssets])
+
   const imageItems = useMemo((): MediaItem[] => {
     if (typeFilter !== 'mine' && typeFilter !== 'images') return []
     const q = query.trim().toLowerCase()
@@ -45,19 +58,10 @@ export function MediaModal({
     const seed = STOCK_IMAGES
       .filter((item) => !disabledKeys?.includes(seedMediaItemKey(item.id)))
       .map((item) => ({ ...item, kind: 'image' as const, seed: true }))
-    const cloud = (libraryConfig?.cloudAssets ?? [])
-      .filter((a) => a.kind === 'image')
-      .map((a) => ({
-        id: `cloud-${a.id}`,
-        name: a.title,
-        url: a.publicUrl,
-        fileKey: `cloud:${a.id}`,
-        kind: 'image' as const,
-        cloud: true,
-      }))
+    const cloud = cloudMediaItems.filter((item) => item.kind === 'image')
     const items = [...seed, ...cloud]
     return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
-  }, [query, typeFilter, uploadedImages, disabledKeys, libraryConfig?.cloudAssets])
+  }, [query, typeFilter, uploadedImages, disabledKeys, cloudMediaItems])
 
   const videoItems = useMemo((): MediaItem[] => {
     if (typeFilter !== 'mine' && typeFilter !== 'videos') return []
@@ -69,19 +73,10 @@ export function MediaModal({
     const seed = STOCK_VIDEOS
       .filter((item) => !disabledKeys?.includes(seedMediaItemKey(item.id)))
       .map((item) => ({ ...item, kind: 'video' as const, seed: true }))
-    const cloud = (libraryConfig?.cloudAssets ?? [])
-      .filter((a) => a.kind === 'video')
-      .map((a) => ({
-        id: `cloud-${a.id}`,
-        name: a.title,
-        url: a.publicUrl,
-        fileKey: `cloud:${a.id}`,
-        kind: 'video' as const,
-        cloud: true,
-      }))
+    const cloud = cloudMediaItems.filter((item) => item.kind === 'video')
     const items = [...seed, ...cloud]
     return q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items
-  }, [query, typeFilter, uploadedVideos, disabledKeys, libraryConfig?.cloudAssets])
+  }, [query, typeFilter, uploadedVideos, disabledKeys, cloudMediaItems])
 
   const mediaItems = useMemo(() => [...imageItems, ...videoItems], [imageItems, videoItems])
 
@@ -108,7 +103,6 @@ export function MediaModal({
         />
 
         <header className="layer-browser-header">
-          <h2>Add Layer</h2>
           <label className="fx-search">
             <Search size={15} />
             <input
