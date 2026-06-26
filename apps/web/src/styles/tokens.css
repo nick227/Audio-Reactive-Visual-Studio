@@ -90,4 +90,7 @@
 
   /* ── Widths ── */
   --width-main: 1216px;
+  --width-media-small: 128px;
+  --width-media-medium: 256px;
+  --width-media-large: 512px;
 }

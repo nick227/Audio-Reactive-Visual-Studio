@@ -1,7 +1,7 @@
 import { db } from '@avl/db'
 import { CommunityAssetService } from './CommunityAssetService'
 import { MediaStorageService } from './MediaStorageService'
-import type { FastifyRequest } from 'fastify'
+import type { FastifyBaseLogger, FastifyRequest } from 'fastify'
 
 const communityAssets = new CommunityAssetService()
 const mediaStorage = new MediaStorageService()
@@ -25,8 +25,16 @@ export class LibraryService {
     return { itemKey, enabled: false }
   }
 
-  async getPublicConfig(request?: FastifyRequest) {
-    const disabledKeys = await this.listDisabledKeys()
+  async getPublicConfig(request?: FastifyRequest, logger?: FastifyBaseLogger) {
+    let disabledKeys: string[] = []
+    try {
+      disabledKeys = await this.listDisabledKeys()
+    } catch (error) {
+      logger?.warn({ error }, 'Failed to load disabled library item keys; continuing with all seed items enabled')
+      // Public library loading should not fail just because seed-item overrides
+      // have not been pushed to a production database yet.
+      disabledKeys = []
+    }
     const assets = await communityAssets.listPublished()
     const cloudAssets = assets.map((asset) => ({
       id: asset.id,
